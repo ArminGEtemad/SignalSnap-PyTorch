@@ -1,0 +1,315 @@
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+from tqdm.auto import tqdm
+
+import torch
+from numba import njit
+from scipy.fft import rfftfreq
+from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+
+
+def load_spec(path):
+    f = open(path, mode='rb')
+    obj = pickle.load(f)
+    f.close()
+    return obj
+
+def to_hdf(dt, data, path, group_name, dataset_name):
+    with h5py.File(path, "w") as f:
+        grp = f.create_group(group_name)
+        d = grp.create_dataset(dataset_name, data=data)
+        d.attrs['dt'] = dt
+
+def unit_conversion(f_unit):
+    if f_unit == 'Hz':
+        t_unit = 's'
+    elif f_unit == 'kHz':
+        t_unit = 'ms'
+    elif f_unit == 'MHz':
+        t_unit = 'us'
+    elif f_unit == 'GHz':
+        t_unit = 'ns'
+    elif f_unit == 'THz':
+        t_unit = 'ps'
+    else:
+        raise ValueError(f'Unknown frequency unit: {f_unit}')
+    return t_unit
+
+# ---- Helper functions related to confinded Gaussian window ----
+@njit
+def g(x, n_windows, l, sigma_t):
+    ge_e = x - n_windows/2
+    ge_d = 2 * l * sigma_t
+
+    sqrt_ge = ge_e / ge_d
+    ge = - sqrt_ge*sqrt_ge
+    gaus = np.exp(ge)
+
+    return gaus
+
+@njit
+def calc_window(x, n_windows, l, sigma_t):
+    term_x = g(x, n_windows, l, sigma_t)
+    term_h = g(-0.5, n_windows, l, sigma_t)
+    term_x_p_l = g(x + l, n_windows, l, sigma_t)
+    term_x_m_l = g(x - l, n_windows, l, sigma_t)
+    term_h_p_l = g(-0.5 + l, n_windows, l, sigma_t)
+    term_h_m_l = g(-0.5 - l, n_windows, l, sigma_t)
+    
+    win = term_x - (term_h * (term_x_p_l + term_x_m_l)) / (term_h_p_l +
+                                                           term_h_m_l)
+    return win
+
+@njit
+def cg_window(n_windows, fs):
+    """
+    confined Gaussian window
+    """
+    x = np.linspace(0, n_windows, n_windows)
+    l = n_windows + 1
+    sigma_t = 0.14
+
+    window = calc_window(x, n_windows, l, sigma_t)
+    norm = np.sum(window*window) / fs
+    window_full = window / np.sqrt(norm)
+
+    return window_full, norm
+
+# ---------------------------------------------------------------
+
+
+class SpectrumCalculator:
+    def __init__(self, sconfig: SpectrumConfig,
+                       diconfig_list: list[DataImportConfig],
+                       selected=None):
+        self.sconfig = sconfig
+        self.diconfig_list = diconfig_list
+        self.selected = selected
+        self.device = torch.device(self.sconfig.backend)
+        self.t_window = None
+        self.t_unit = unit_conversion(sconfig.f_unit)
+        self.n_chunks = [0] * len(diconfig_list)
+        self.m = {1: None} # if different m needed for different orders
+        self.m_var = {1: None} # if different m needed for different orders
+        self.fs = 1 / self.sconfig.dt
+        self.f_lists = {2: None, 3: None, 4: None}
+        # initializing s and s_gpu as nested dictionaries for each dataset
+        self.s = {i: {1: None} for i in range(len(diconfig_list))}
+        self.s_gpu = {i: {1: None} for i in range(len(diconfig_list))}
+        
+        self.validate_shapes() # crashing the program if the data are not
+                               # equally long
+        # if none is selected show all
+        if self.selected is None:
+            self.selected = list(range(len(diconfig_list)))
+
+        
+    def validate_shapes(self):
+        """
+        making sure that all the imported data have the same size and shape
+        """
+        expected_shape = self.diconfig_list[0].data.shape[0]
+        
+        for i, data_config in enumerate(self.diconfig_list):
+            data_shape = data_config.data.shape[0]
+            if data_shape != expected_shape:
+                raise ValueError('Imported data must have same length!')
+
+    def plot_first_frames(self, selected, window_size):
+        n_plots = len(selected)
+        fig, axes = plt.subplots(n_plots, 1, figsize=(14, 3 * n_plots))
+        
+        if n_plots == 1:
+            axes = [axes]
+
+        for i, selected_idx in enumerate(selected):
+            data_config = self.diconfig_list[selected_idx]
+            chunk = data_config.data
+            first_frame = chunk[:window_size]
+            t = np.arange(len(first_frame)) * self.sconfig.dt
+        
+            axes[i].plot(t, first_frame)
+            axes[i].set_xlim([0, t[-1]])
+            axes[i].set_title(f'first frame for data {selected_idx + 1}')
+            axes[i].set_xlabel('t / ('+ self.t_unit + ')')
+            axes[i].set_ylabel('amplitude')
+
+        plt.tight_layout()
+        plt.show()
+
+    # ---- calculating unbiased cumulants ----
+    def c1(self, a_w):
+        """
+        first cumulant is calculated via:
+        c1 = <a_w>
+        """
+        s1 = torch.mean(a_w, dim=0)
+        return s1[0]
+
+    # ----------------------------------------
+
+    def store_sum_single_spectrum(self, single_spectrum, order, dataset_idx):
+        if self.s_gpu[dataset_idx][order] is None:
+            self.s_gpu[dataset_idx][order] = single_spectrum
+        else:
+            self.s_gpu[dataset_idx][order] += single_spectrum
+
+    def store_final_spectrum(self, orders, n_chunks, dataset_idx):
+        for order in orders:
+            self.s_gpu[dataset_idx][order] /= n_chunks
+            self.s[dataset_idx][order] = self.s_gpu[dataset_idx][order].cpu().resolve_conj().numpy()
+
+    def fourier_coeffs_to_spectra(self, orders, coeffs_gpu, f_min_idx,
+                                  f_max_idx, single_window, dataset_idx):
+        for order in orders:
+            if order == 1:
+                a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
+                single_spectrum = self.c1(a_w) / self.sconfig.dt /single_window.mean() /single_window.shape[0]
+
+        self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
+    
+    def process_order(self):
+        if self.sconfig.order_in == 'all':
+            return [1]
+        else:
+            return self.sconfig.order_in
+
+    def reset_variables(self, orders, f_lists=None):
+        for dataset_idx in range(len(self.diconfig_list)):
+            for order in orders:
+                self.f_lists[order] = f_lists
+                self.s[dataset_idx][order] = None
+                self.s_gpu[dataset_idx][order] = None
+                self.m[order] = self.sconfig.m
+                self.m_var[order] = self.sconfig.m_var
+
+    def reset(self):
+        orders = self.process_order()
+        self.orders = orders
+        self.reset_variables(orders, f_lists=self.sconfig.f_lists)
+        return orders
+
+    def setup_calc_spec(self, orders):
+        f_max_allowed = 1 / (2 * self.sconfig.dt)
+        
+        if self.sconfig.f_max is None:
+            self.sconfig.f_max = f_max_allowed
+
+        window_len_factor = f_max_allowed / (self.sconfig.f_max -
+                                             self.sconfig.f_min)
+
+        self.t_window = (self.sconfig.spectrum_size - 1) * (
+                                2 * self.sconfig.dt * window_len_factor)
+        n_data_points = self.diconfig_list[0].data.shape[0] # since all data
+                                                            # are equally long
+                                                            # we can just take
+                                                            # the shape of one
+                                                            # of them
+        window_points = int(np.round(self.t_window / self.sconfig.dt))
+
+        if not window_points * self.sconfig.m + window_points // 2 < n_data_points:
+            m = (n_data_points - window_points // 2) // window_points
+            if m < max(orders):
+                max_spec_size = window_points // (2 * window_len_factor) + 1
+                raise ValueError('Not enough data points')
+            print(f'values have been changed. old: m = {self.m}, new m = {m}')
+            self.sconfig.m = m
+        else:
+            m = self.sconfig.m
+        
+        denom_spec = window_points * m + window_points // 2
+        n_spectra = n_data_points // denom_spec
+        
+        if  n_spectra < self.sconfig.m:
+            m_var = n_data_points // denom_spec
+            if m_var < 2:
+                raise ValueError('Not enough data points.')
+            else:
+                print(f'm_var values have been changed. old:{self.sconfig.m_var}, new: {m_var}')
+            self.m_var = m_var
+
+        n_windows = int(np.floor(n_data_points / (m * window_points)))
+        freq_all_freq = rfftfreq(int(window_points), self.sconfig.dt)
+        
+        # Is f_max too high? And find the f_max index
+        f_mask = freq_all_freq <= self.sconfig.f_max
+        f_max_idx = sum(f_mask)
+        
+        # Find the f_min index
+        f_mask = freq_all_freq < self.sconfig.f_min
+        f_min_idx = sum(f_mask)
+
+        return m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows
+
+    def calc_spec(self):
+        """
+        calculating spectra using pytorch 
+        """
+        orders = self.reset()
+        
+        m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = self.setup_calc_spec(orders)
+
+        for order in orders:
+            self.m[order] = m
+
+        single_window, _ = cg_window(int(window_points), self.fs)
+        window = np.array(m * [single_window]).flatten()
+        window = window.reshape((m, window_points, 1))
+        
+        window = torch.from_numpy(window).to(self.device)
+        if self.sconfig.show_first_frame:
+            self.plot_first_frames(self.selected, window_points)
+        
+        for i in tqdm(np.arange(0, n_windows, 1), leave=False):
+            shift_iter = [0, window_points // 2] # needed for correct position
+                                                 # of the window functions
+            for window_shift in shift_iter:
+                # the interlaced calculation must be applied on every input
+                for j, data_config in enumerate(self.diconfig_list):
+                    #n_chunks = 0
+                    dataset_idx = j
+                    chunk = data_config.data[
+                        int(i * (window_points * m)
+                            + window_shift): int((i + 1) * (window_points * m)
+                                                            + window_shift)]
+                    if not chunk.shape[0] == window_points * m:
+                        break
+                    
+                    chunk_r = chunk.reshape((m, window_points, 1))
+                    chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
+                    
+                    self.n_chunks[dataset_idx] += 1
+
+                    # performing Fourier Trafo
+                    a_w_all_gpu = torch.fft.rfft(window * chunk_gpu, dim=1)
+                    a_w_all_gpu *= self.sconfig.dt # scale correction
+                    
+                    # calculating spectra
+                    self.fourier_coeffs_to_spectra(orders, a_w_all_gpu,
+                                                   f_min_idx, f_max_idx,
+                                                   single_window, dataset_idx)
+                    if self.n_chunks[dataset_idx] == self.sconfig.break_after:
+                        break
+        for j in range(len(self.diconfig_list)):
+            self.store_final_spectrum(orders, self.n_chunks[j], j)
+        return self.s
+# ----------------------------------------------------------------------------
+# testing
+N = int(1e6)
+data1 = np.sin(np.linspace(0, 50*np.pi, N)) + 4
+data2 = np.cos(np.linspace(0, 50*np.pi, N)) + 3
+data3 = np.random.rand(N)
+
+config1 = DataImportConfig(data=data1)
+config2 = DataImportConfig(data=data2)
+config3 = DataImportConfig(data=data3)
+
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu',
+                         spectrum_size=1000, show_first_frame=False)
+selected_data = [0, 1, 2]
+calc = SpectrumCalculator(sconfig, [config1, config2, config3]
+                          , selected=None)
+calc.calc_spec()
+print(calc.s)
