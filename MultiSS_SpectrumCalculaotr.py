@@ -95,13 +95,13 @@ class SpectrumCalculator:
         self.m_var = {1: None} # if different m needed for different orders
         self.fs = 1 / self.sconfig.dt
         self.freq = {i: {2: None} for i in range(len(diconfig_list))}
-        self.f_lists = {2: None, 3: None, 4: None}
-        self.s = {i: {1: None} for i in range(len(diconfig_list))}
-        self.s_gpu = {i: {1: None} for i in range(len(diconfig_list))}
-        self.s_err = {i: {1: None} for i in range(len(diconfig_list))}
-        self.s_err_gpu = {i: {1: None} for i in range(len(diconfig_list))}
-        self.s_errs = {i: {1: None} for i in range(len(diconfig_list))}
-        self.err_counter = {i: {1: 0} for i in range(len(diconfig_list))}
+        self.f_lists = {i: {2: None, 3: None, 4: None} for i in range(len(diconfig_list))}
+        self.s = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
+        self.s_gpu = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
+        self.s_err = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
+        self.s_err_gpu = {i: {1: None, 2:None} for i in range(len(diconfig_list))}
+        self.s_errs = {i: {1: None, 2: []} for i in range(len(diconfig_list))}
+        self.err_counter = {i: {1: 0, 2: 0} for i in range(len(diconfig_list))}
         self.n_error_estimates = {i: 0 for i in range(len(diconfig_list))}
         self.validate_shapes() # crashing the program if the data are not
                                # equally long
@@ -168,10 +168,10 @@ class SpectrumCalculator:
         if self.sconfig.coherent:
             s2 = term_1
         else:
-            factor = self.m / (self.m - 1)
+            factor = self.sconfig.m / (self.sconfig.m - 1)
             term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
             s2 = factor * (term_1 - term_2)
-        return s2
+        return s2.squeeze(-1)
     # ----------------------------------------
 
     def store_sum_single_spectrum(self, single_spectrum, order, dataset_idx):
@@ -182,6 +182,8 @@ class SpectrumCalculator:
         
         if order == 1:
             self.s_errs[dataset_idx][order][0, self.err_counter[dataset_idx][order]] = single_spectrum
+        elif order == 2:
+            self.s_errs[dataset_idx][order][:, self.err_counter[dataset_idx][order]] = single_spectrum
         
         self.err_counter[dataset_idx][order] += 1
 
@@ -223,30 +225,45 @@ class SpectrumCalculator:
                 single_spectrum = self.c1(a_w) / (self.sconfig.dt *
                                                   single_window.mean() *
                                                   single_window.shape[0])
+            elif order == 2:
+                if self.sconfig.f_lists is None:
+                    a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
+                else:
+                    a_w = coeffs_gpu
+                single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt *
+                                                       (single_window**2).sum()
+                                                      )
 
-        self.store_sum_single_spectrum(torch.conj(single_spectrum), order,
+            self.store_sum_single_spectrum(torch.conj(single_spectrum), order,
                                        dataset_idx)
 
     def array_prep(self, orders, f_all_in, dataset_idx):
         f_max_idx = f_all_in.shape[0]
         for order in orders:
+            self.freq[dataset_idx][order] = f_all_in
             if order == 1:
                 self.s_errs[dataset_idx][order] = torch.ones(
                     (1, self.sconfig.m_var), device=self.sconfig.backend,
                     dtype=torch.complex64)
+            elif order == 2:
+                self.s_errs[dataset_idx][order] = torch.ones(
+                    (f_max_idx, self.sconfig.m_var),
+                    device=self.sconfig.backend,
+                    dtype=torch.complex64)
     
     def process_order(self):
         if self.sconfig.order_in == 'all':
-            return [1]
+            return [1, 2]
         else:
             return self.sconfig.order_in
 
     def reset_variables(self, orders, f_lists=None):
-        self.err_counter = {i: {1: 0} for i in range(len(self.diconfig_list))}
+        self.err_counter = {i: {1: 0, 2: 0} for i in range(len(self.diconfig_list))}
         self.n_error_estimates = {i: 0 for i in range(len(self.diconfig_list))}
-        for dataset_idx in range(len(self.diconfig_list)):
+        for dataset_idx in self.selected:
             for order in orders:
                 self.f_lists[order] = f_lists
+                self.freq[dataset_idx][order] = None
                 self.s[dataset_idx][order] = None
                 self.s_gpu[dataset_idx][order] = None
                 self.s_err[dataset_idx][order] = None
@@ -357,7 +374,7 @@ class SpectrumCalculator:
                     
                     if self.use_float32:
                         chunk_gpu = torch.from_numpy(chunk_r.astype(np.float32)).to(self.device)
-                    else:   
+                    else:
                         chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
                     
                     self.n_chunks[dataset_idx] += 1
@@ -375,7 +392,7 @@ class SpectrumCalculator:
         for dataset_idx in self.selected:
             self.store_final_spectrum(orders, self.n_chunks[dataset_idx]
                                       , dataset_idx)
-        return self.s, self.s_err
+        return self.freq, self.s, self.s_err
     
     def display(self):
         all_results = []
@@ -411,22 +428,27 @@ class SpectrumCalculator:
 N = int(1e6)
 data1 = np.sin(np.linspace(0, 50*np.pi, N)) + 4
 data2 = np.cos(np.linspace(0, 50*np.pi, N)) + 3
-data3 = np.random.rand(N)
-data4 = np.cos(np.linspace(0, 50*np.pi, N)) + 9
+#data3 = np.random.rand(N)
+#data4 = np.cos(np.linspace(0, 50000*np.pi, N)) + 9
 
 config1 = DataImportConfig(data=data1)
 config2 = DataImportConfig(data=data2)
-config3 = DataImportConfig(data=data3)
-config4 = DataImportConfig(data=data4)
+#config3 = DataImportConfig(data=data3)
+#config4 = DataImportConfig(data=data4)
 
-sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps',
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu', order_in=[1, 2],
                          spectrum_size=1000, show_first_frame=False)
-selected_data = [2, 1,  3]
-calc = SpectrumCalculator(sconfig, [config1, config2, config3, config4]
-                          , selected=selected_data)
+selected_data = [1, 2, 3, 4]
+calc = SpectrumCalculator(sconfig, [config1, config2]
+                          , selected=None)
 calc.calc_spec()
 #print(calc.s)
 #print('----------------------------')
-#print(calc.s_err)
+print(calc.s_err)
 #print('----------------------------')
-calc.display()
+#calc.display()
+#plt.plot(calc.freq[0][2], calc.s[0][2].real)
+#plt.plot(calc.freq[1][2], calc.s[1][2].real)
+#plt.plot(calc.freq[2][2], calc.s[2][2].real)
+#plt.show()
+#print(calc.freq)
