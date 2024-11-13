@@ -108,6 +108,12 @@ class SpectrumCalculator:
         # if none is selected show all
         if self.selected is None:
             self.selected = list(range(len(diconfig_list)))
+        # insurring MPS backend precision support
+        if self.sconfig.backend == 'mps':
+            self.use_float32 = True
+            print('MPS backend on Apple harware supports single precision.\n Using float32 for all tensors!')
+        else:
+            self.use_float32 = False
 
         
     def validate_shapes(self):
@@ -322,12 +328,16 @@ class SpectrumCalculator:
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten()
         window = window.reshape((m, window_points, 1))
-        window = torch.from_numpy(window).to(self.device)
         
+        if self.use_float32:
+            window = torch.from_numpy(window.astype(np.float32)).to(self.device)
+        else:
+            window = torch.from_numpy(window).to(self.device)
+
         if self.sconfig.show_first_frame:
             self.plot_first_frames(self.selected, window_points)
-        for j, data_config in enumerate(self.diconfig_list):
-            dataset_idx = j
+        for dataset_idx in self.selected:
+            data_config = self.diconfig_list[dataset_idx]
             self.array_prep(orders, freq_all_freq[f_min_idx:f_max_idx]
                                     , dataset_idx)
             for i in tqdm(np.arange(0, n_windows, 1), leave=False):
@@ -344,7 +354,12 @@ class SpectrumCalculator:
                         break
                     
                     chunk_r = chunk.reshape((m, window_points, 1))
-                    chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
+                    
+                    if self.use_float32:
+                        chunk_gpu = torch.from_numpy(chunk_r.astype(np.float32)).to(self.device)
+                    else:   
+                        chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
+                    
                     self.n_chunks[dataset_idx] += 1
 
                     # performing Fourier Trafo
@@ -357,15 +372,16 @@ class SpectrumCalculator:
                                                    single_window, dataset_idx)
                     if self.n_chunks[dataset_idx] == self.sconfig.break_after:
                         break
-        for j in range(len(self.diconfig_list)):
-            self.store_final_spectrum(orders, self.n_chunks[j], j)
+        for dataset_idx in self.selected:
+            self.store_final_spectrum(orders, self.n_chunks[dataset_idx]
+                                      , dataset_idx)
         return self.s, self.s_err
     
     def display(self):
         all_results = []
 
         # Collect data from each dataset
-        for dataset_idx in range(len(self.diconfig_list)):
+        for dataset_idx in self.selected:
             for order in self.orders:
                 if order == 1:
                     if self.s[dataset_idx][order] is not None and self.s_err[dataset_idx][order] is not None:
@@ -403,9 +419,9 @@ config2 = DataImportConfig(data=data2)
 config3 = DataImportConfig(data=data3)
 config4 = DataImportConfig(data=data4)
 
-sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu',
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps',
                          spectrum_size=1000, show_first_frame=False)
-selected_data = [0, 1,  3]
+selected_data = [2, 1,  3]
 calc = SpectrumCalculator(sconfig, [config1, config2, config3, config4]
                           , selected=selected_data)
 calc.calc_spec()
