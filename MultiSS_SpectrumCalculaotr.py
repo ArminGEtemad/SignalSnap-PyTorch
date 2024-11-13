@@ -8,7 +8,8 @@ import torch
 from numba import njit
 from scipy.fft import rfftfreq
 from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
-
+import pandas as pd
+from tabulate import tabulate
 
 def load_spec(path):
     f = open(path, mode='rb')
@@ -79,7 +80,6 @@ def cg_window(n_windows, fs):
 
 # ---------------------------------------------------------------
 
-
 class SpectrumCalculator:
     def __init__(self, sconfig: SpectrumConfig,
                        diconfig_list: list[DataImportConfig],
@@ -94,11 +94,15 @@ class SpectrumCalculator:
         self.m = {1: None} # if different m needed for different orders
         self.m_var = {1: None} # if different m needed for different orders
         self.fs = 1 / self.sconfig.dt
+        self.freq = {i: {2: None} for i in range(len(diconfig_list))}
         self.f_lists = {2: None, 3: None, 4: None}
-        # initializing s and s_gpu as nested dictionaries for each dataset
         self.s = {i: {1: None} for i in range(len(diconfig_list))}
         self.s_gpu = {i: {1: None} for i in range(len(diconfig_list))}
-        
+        self.s_err = {i: {1: None} for i in range(len(diconfig_list))}
+        self.s_err_gpu = {i: {1: None} for i in range(len(diconfig_list))}
+        self.s_errs = {i: {1: None} for i in range(len(diconfig_list))}
+        self.err_counter = {i: {1: 0} for i in range(len(diconfig_list))}
+        self.n_error_estimates = {i: 0 for i in range(len(diconfig_list))}
         self.validate_shapes() # crashing the program if the data are not
                                # equally long
         # if none is selected show all
@@ -147,7 +151,21 @@ class SpectrumCalculator:
         """
         s1 = torch.mean(a_w, dim=0)
         return s1[0]
-
+    
+    def c2(self, a_w1, a_w2):
+        """
+        second cumulant for multi-variable can be calculated via:
+        c2 = m/(m-1) (<a_w1.a_w2*> - <a_w1>.<a_w2*>)
+        """
+        a_w2_star = torch.conj(a_w2)
+        term_1 = torch.mean(a_w1 * a_w2_star, dim=0)
+        if self.sconfig.coherent:
+            s2 = term_1
+        else:
+            factor = self.m / (self.m - 1)
+            term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
+            s2 = factor * (term_1 - term_2)
+        return s2
     # ----------------------------------------
 
     def store_sum_single_spectrum(self, single_spectrum, order, dataset_idx):
@@ -155,20 +173,61 @@ class SpectrumCalculator:
             self.s_gpu[dataset_idx][order] = single_spectrum
         else:
             self.s_gpu[dataset_idx][order] += single_spectrum
+        
+        if order == 1:
+            self.s_errs[dataset_idx][order][0, self.err_counter[dataset_idx][order]] = single_spectrum
+        
+        self.err_counter[dataset_idx][order] += 1
 
+        if self.err_counter[dataset_idx][order] % self.sconfig.m_var == 0:
+            if order == 1 or order == 2:
+                dim = 1
+            else:
+                dim = 2
+            
+            if order == self.orders[0]:
+                self.n_error_estimates[dataset_idx] += 1
+
+            factor = self.sconfig.m_var / (self.sconfig.m_var - 1)
+            mean_squared = torch.mean(self.s_errs[dataset_idx][order]**2, dim=dim)
+            squared_mean = torch.mean(self.s_errs[dataset_idx][order],dim=dim)**2
+            s_err_gpu = factor*(mean_squared - squared_mean)
+            self.s_err_gpu = s_err_gpu / self.sconfig.m_var
+
+            if self.s_err[dataset_idx][order] is None:
+                self.s_err[dataset_idx][order] = self.s_err_gpu.cpu().numpy()
+            else:
+                self.s_err[dataset_idx][order] += self.s_err_gpu.cpu().numpy()
+            
+            self.err_counter[dataset_idx][order] = 0
+    
     def store_final_spectrum(self, orders, n_chunks, dataset_idx):
         for order in orders:
             self.s_gpu[dataset_idx][order] /= n_chunks
             self.s[dataset_idx][order] = self.s_gpu[dataset_idx][order].cpu().resolve_conj().numpy()
+            self.s_err[dataset_idx][order] = (1 / self.n_error_estimates[dataset_idx]) * np.sqrt(self.s_err[dataset_idx][order])
+            self.s_err[dataset_idx][order] /= 2 # for interlaced calculation
+
 
     def fourier_coeffs_to_spectra(self, orders, coeffs_gpu, f_min_idx,
                                   f_max_idx, single_window, dataset_idx):
         for order in orders:
             if order == 1:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
-                single_spectrum = self.c1(a_w) / self.sconfig.dt /single_window.mean() /single_window.shape[0]
+                single_spectrum = self.c1(a_w) / (self.sconfig.dt *
+                                                  single_window.mean() *
+                                                  single_window.shape[0])
 
-        self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
+        self.store_sum_single_spectrum(torch.conj(single_spectrum), order,
+                                       dataset_idx)
+
+    def array_prep(self, orders, f_all_in, dataset_idx):
+        f_max_idx = f_all_in.shape[0]
+        for order in orders:
+            if order == 1:
+                self.s_errs[dataset_idx][order] = torch.ones(
+                    (1, self.sconfig.m_var), device=self.sconfig.backend,
+                    dtype=torch.complex64)
     
     def process_order(self):
         if self.sconfig.order_in == 'all':
@@ -177,11 +236,16 @@ class SpectrumCalculator:
             return self.sconfig.order_in
 
     def reset_variables(self, orders, f_lists=None):
+        self.err_counter = {i: {1: 0} for i in range(len(self.diconfig_list))}
+        self.n_error_estimates = {i: 0 for i in range(len(self.diconfig_list))}
         for dataset_idx in range(len(self.diconfig_list)):
             for order in orders:
                 self.f_lists[order] = f_lists
                 self.s[dataset_idx][order] = None
                 self.s_gpu[dataset_idx][order] = None
+                self.s_err[dataset_idx][order] = None
+                self.s_err_gpu[dataset_idx][order] = None
+                self.s_errs[dataset_idx][order] = []
                 self.m[order] = self.sconfig.m
                 self.m_var[order] = self.sconfig.m_var
 
@@ -227,16 +291,15 @@ class SpectrumCalculator:
             if m_var < 2:
                 raise ValueError('Not enough data points.')
             else:
-                print(f'm_var values have been changed. old:{self.sconfig.m_var}, new: {m_var}')
+                print(f'm_var values have been changed. '
+                      f'old:{self.sconfig.m_var}, new: {m_var}')
             self.m_var = m_var
 
         n_windows = int(np.floor(n_data_points / (m * window_points)))
         freq_all_freq = rfftfreq(int(window_points), self.sconfig.dt)
-        
         # Is f_max too high? And find the f_max index
         f_mask = freq_all_freq <= self.sconfig.f_max
         f_max_idx = sum(f_mask)
-        
         # Find the f_min index
         f_mask = freq_all_freq < self.sconfig.f_min
         f_min_idx = sum(f_mask)
@@ -249,7 +312,9 @@ class SpectrumCalculator:
         """
         orders = self.reset()
         
-        m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = self.setup_calc_spec(orders)
+        m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = (
+                                                self.setup_calc_spec(orders)
+                                                                           )
 
         for order in orders:
             self.m[order] = m
@@ -257,19 +322,20 @@ class SpectrumCalculator:
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten()
         window = window.reshape((m, window_points, 1))
-        
         window = torch.from_numpy(window).to(self.device)
+        
         if self.sconfig.show_first_frame:
             self.plot_first_frames(self.selected, window_points)
-        
-        for i in tqdm(np.arange(0, n_windows, 1), leave=False):
-            shift_iter = [0, window_points // 2] # needed for correct position
-                                                 # of the window functions
-            for window_shift in shift_iter:
+        for j, data_config in enumerate(self.diconfig_list):
+            dataset_idx = j
+            self.array_prep(orders, freq_all_freq[f_min_idx:f_max_idx]
+                                    , dataset_idx)
+            for i in tqdm(np.arange(0, n_windows, 1), leave=False):
+                shift_iter = [0, window_points // 2] # needed for correct
+                                                     # position of the
+                                                     # window functions
                 # the interlaced calculation must be applied on every input
-                for j, data_config in enumerate(self.diconfig_list):
-                    #n_chunks = 0
-                    dataset_idx = j
+                for window_shift in shift_iter:
                     chunk = data_config.data[
                         int(i * (window_points * m)
                             + window_shift): int((i + 1) * (window_points * m)
@@ -279,7 +345,6 @@ class SpectrumCalculator:
                     
                     chunk_r = chunk.reshape((m, window_points, 1))
                     chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
-                    
                     self.n_chunks[dataset_idx] += 1
 
                     # performing Fourier Trafo
@@ -294,22 +359,58 @@ class SpectrumCalculator:
                         break
         for j in range(len(self.diconfig_list)):
             self.store_final_spectrum(orders, self.n_chunks[j], j)
-        return self.s
+        return self.s, self.s_err
+    
+    def display(self):
+        all_results = []
+
+        # Collect data from each dataset
+        for dataset_idx in range(len(self.diconfig_list)):
+            for order in self.orders:
+                if order == 1:
+                    if self.s[dataset_idx][order] is not None and self.s_err[dataset_idx][order] is not None:
+                        # Create a list of dictionaries for each row
+                        spectrum = self.s[dataset_idx][order]
+                        error_estimate = self.s_err[dataset_idx][order]
+                        
+                        for i in range(len(spectrum)):
+                            all_results.append({
+                                'Dataset Index': dataset_idx.real,
+                                'S1': spectrum[i].real,
+                                'Error S1': error_estimate[i].real
+                            })
+                else:
+                    print(f"Visualization for order {order} is not implemented yet.")
+
+        # Create a DataFrame from the collected results
+        df = pd.DataFrame(all_results)
+
+        # Display the DataFrame using tabulate for a formatted table
+        if not df.empty:
+            print(tabulate(df, headers='keys', tablefmt='pretty', showindex=False))
+        else:
+            print("No results available for order 1.")
 # ----------------------------------------------------------------------------
 # testing
 N = int(1e6)
 data1 = np.sin(np.linspace(0, 50*np.pi, N)) + 4
 data2 = np.cos(np.linspace(0, 50*np.pi, N)) + 3
 data3 = np.random.rand(N)
+data4 = np.cos(np.linspace(0, 50*np.pi, N)) + 9
 
 config1 = DataImportConfig(data=data1)
 config2 = DataImportConfig(data=data2)
 config3 = DataImportConfig(data=data3)
+config4 = DataImportConfig(data=data4)
 
 sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu',
                          spectrum_size=1000, show_first_frame=False)
-selected_data = [0, 1, 2]
-calc = SpectrumCalculator(sconfig, [config1, config2, config3]
-                          , selected=None)
+selected_data = [0, 1,  3]
+calc = SpectrumCalculator(sconfig, [config1, config2, config3, config4]
+                          , selected=selected_data)
 calc.calc_spec()
-print(calc.s)
+#print(calc.s)
+#print('----------------------------')
+#print(calc.s_err)
+#print('----------------------------')
+calc.display()
