@@ -58,7 +58,7 @@ def calc_window(x, n_windows, l, sigma_t):
     term_x_m_l = g(x - l, n_windows, l, sigma_t)
     term_h_p_l = g(-0.5 + l, n_windows, l, sigma_t)
     term_h_m_l = g(-0.5 - l, n_windows, l, sigma_t)
-    
+
     win = term_x - (term_h * (term_x_p_l + term_x_m_l)) / (term_h_p_l +
                                                            term_h_m_l)
     return win
@@ -87,6 +87,11 @@ class SpectrumCalculator:
         self.sconfig = sconfig
         self.diconfig_list = diconfig_list
         self.selected = selected
+
+        # if none is selected show all
+        if self.selected is None:
+            self.selected = list(range(len(diconfig_list)))
+
         self.device = torch.device(self.sconfig.backend)
         self.t_window = None
         self.t_unit = unit_conversion(sconfig.f_unit)
@@ -94,34 +99,31 @@ class SpectrumCalculator:
         self.m = {1: None} # if different m needed for different orders
         self.m_var = {1: None} # if different m needed for different orders
         self.fs = 1 / self.sconfig.dt
-        self.freq = {i: {2: None} for i in range(len(diconfig_list))}
-        self.f_lists = {i: {2: None, 3: None, 4: None} for i in range(len(diconfig_list))}
-        self.s = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
-        self.s_gpu = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
-        self.s_err = {i: {1: None, 2: None} for i in range(len(diconfig_list))}
-        self.s_err_gpu = {i: {1: None, 2:None} for i in range(len(diconfig_list))}
-        self.s_errs = {i: {1: None, 2: []} for i in range(len(diconfig_list))}
-        self.err_counter = {i: {1: 0, 2: 0} for i in range(len(diconfig_list))}
-        self.n_error_estimates = {i: 0 for i in range(len(diconfig_list))}
+        self.freq = {i: {2: None} for i in self.selected}
+        self.f_lists = {i: {2: None, 3: None, 4: None} for i in self.selected}
+        self.s = {i: {1: None, 2: None} for i in self.selected}
+        self.s_gpu = {i: {1: None, 2: None} for i in self.selected}
+        self.s_err = {i: {1: None, 2: None} for i in self.selected}
+        self.s_err_gpu = {i: {1: None, 2:None} for i in self.selected}
+        self.s_errs = {i: {1: None, 2: []} for i in self.selected}
+        self.err_counter = {i: {1: 0, 2: 0} for i in self.selected}
+        self.n_error_estimates = {i: 0 for i in self.selected}
         self.validate_shapes() # crashing the program if the data are not
                                # equally long
-        # if none is selected show all
-        if self.selected is None:
-            self.selected = list(range(len(diconfig_list)))
         # insurring MPS backend precision support
         if self.sconfig.backend == 'mps':
             self.use_float32 = True
-            print('MPS backend on Apple harware supports single precision.\n Using float32 for all tensors!')
+            print('MPS backend on Apple harware supports single precision.\n'
+                  'Using float32 for all tensors!')
         else:
             self.use_float32 = False
 
-        
     def validate_shapes(self):
         """
         making sure that all the imported data have the same size and shape
         """
         expected_shape = self.diconfig_list[0].data.shape[0]
-        
+
         for i, data_config in enumerate(self.diconfig_list):
             data_shape = data_config.data.shape[0]
             if data_shape != expected_shape:
@@ -130,7 +132,6 @@ class SpectrumCalculator:
     def plot_first_frames(self, selected, window_size):
         n_plots = len(selected)
         fig, axes = plt.subplots(n_plots, 1, figsize=(14, 3 * n_plots))
-        
         if n_plots == 1:
             axes = [axes]
 
@@ -139,7 +140,6 @@ class SpectrumCalculator:
             chunk = data_config.data
             first_frame = chunk[:window_size]
             t = np.arange(len(first_frame)) * self.sconfig.dt
-        
             axes[i].plot(t, first_frame)
             axes[i].set_xlim([0, t[-1]])
             axes[i].set_title(f'first frame for data {selected_idx + 1}')
@@ -157,7 +157,7 @@ class SpectrumCalculator:
         """
         s1 = torch.mean(a_w, dim=0)
         return s1[0]
-    
+
     def c2(self, a_w1, a_w2):
         """
         second cumulant for multi-variable can be calculated via:
@@ -179,12 +179,10 @@ class SpectrumCalculator:
             self.s_gpu[dataset_idx][order] = single_spectrum
         else:
             self.s_gpu[dataset_idx][order] += single_spectrum
-        
         if order == 1:
             self.s_errs[dataset_idx][order][0, self.err_counter[dataset_idx][order]] = single_spectrum
         elif order == 2:
             self.s_errs[dataset_idx][order][:, self.err_counter[dataset_idx][order]] = single_spectrum
-        
         self.err_counter[dataset_idx][order] += 1
 
         if self.err_counter[dataset_idx][order] % self.sconfig.m_var == 0:
@@ -192,7 +190,7 @@ class SpectrumCalculator:
                 dim = 1
             else:
                 dim = 2
-            
+
             if order == self.orders[0]:
                 self.n_error_estimates[dataset_idx] += 1
 
@@ -206,9 +204,8 @@ class SpectrumCalculator:
                 self.s_err[dataset_idx][order] = self.s_err_gpu.cpu().numpy()
             else:
                 self.s_err[dataset_idx][order] += self.s_err_gpu.cpu().numpy()
-            
             self.err_counter[dataset_idx][order] = 0
-    
+
     def store_final_spectrum(self, orders, n_chunks, dataset_idx):
         for order in orders:
             self.s_gpu[dataset_idx][order] /= n_chunks
@@ -250,7 +247,7 @@ class SpectrumCalculator:
                     (f_max_idx, self.sconfig.m_var),
                     device=self.sconfig.backend,
                     dtype=torch.complex64)
-    
+
     def process_order(self):
         if self.sconfig.order_in == 'all':
             return [1, 2]
@@ -305,10 +302,10 @@ class SpectrumCalculator:
             self.sconfig.m = m
         else:
             m = self.sconfig.m
-        
+
         denom_spec = window_points * m + window_points // 2
         n_spectra = n_data_points // denom_spec
-        
+
         if  n_spectra < self.sconfig.m:
             m_var = n_data_points // denom_spec
             if m_var < 2:
@@ -334,7 +331,7 @@ class SpectrumCalculator:
         calculating spectra using pytorch 
         """
         orders = self.reset()
-        
+
         m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = (
                                                 self.setup_calc_spec(orders)
                                                                            )
@@ -345,7 +342,7 @@ class SpectrumCalculator:
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten()
         window = window.reshape((m, window_points, 1))
-        
+
         if self.use_float32:
             window = torch.from_numpy(window.astype(np.float32)).to(self.device)
         else:
@@ -369,20 +366,20 @@ class SpectrumCalculator:
                                                             + window_shift)]
                     if not chunk.shape[0] == window_points * m:
                         break
-                    
+
                     chunk_r = chunk.reshape((m, window_points, 1))
-                    
+
                     if self.use_float32:
                         chunk_gpu = torch.from_numpy(chunk_r.astype(np.float32)).to(self.device)
                     else:
                         chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
-                    
+
                     self.n_chunks[dataset_idx] += 1
 
                     # performing Fourier Trafo
                     a_w_all_gpu = torch.fft.rfft(window * chunk_gpu, dim=1)
                     a_w_all_gpu *= self.sconfig.dt # scale correction
-                    
+
                     # calculating spectra
                     self.fourier_coeffs_to_spectra(orders, a_w_all_gpu,
                                                    f_min_idx, f_max_idx,
@@ -393,7 +390,7 @@ class SpectrumCalculator:
             self.store_final_spectrum(orders, self.n_chunks[dataset_idx]
                                       , dataset_idx)
         return self.freq, self.s, self.s_err
-    
+
     def display(self):
         all_results = []
 
@@ -405,7 +402,7 @@ class SpectrumCalculator:
                         # Create a list of dictionaries for each row
                         spectrum = self.s[dataset_idx][order]
                         error_estimate = self.s_err[dataset_idx][order]
-                        
+
                         for i in range(len(spectrum)):
                             all_results.append({
                                 'Dataset Index': dataset_idx.real,
@@ -420,7 +417,8 @@ class SpectrumCalculator:
 
         # Display the DataFrame using tabulate for a formatted table
         if not df.empty:
-            print(tabulate(df, headers='keys', tablefmt='pretty', showindex=False))
+            print(tabulate(df, headers='keys', tablefmt='pretty',
+                           showindex=False))
         else:
             print("No results available for order 1.")
 # ----------------------------------------------------------------------------
@@ -428,27 +426,27 @@ class SpectrumCalculator:
 N = int(1e6)
 data1 = np.sin(np.linspace(0, 50*np.pi, N)) + 4
 data2 = np.cos(np.linspace(0, 50*np.pi, N)) + 3
-#data3 = np.random.rand(N)
+data3 = np.random.rand(N)
 #data4 = np.cos(np.linspace(0, 50000*np.pi, N)) + 9
 
 config1 = DataImportConfig(data=data1)
 config2 = DataImportConfig(data=data2)
-#config3 = DataImportConfig(data=data3)
+config3 = DataImportConfig(data=data3)
 #config4 = DataImportConfig(data=data4)
 
-sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu', order_in=[1, 2],
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps', order_in=[1, 2],
                          spectrum_size=1000, show_first_frame=False)
-selected_data = [1, 2, 3, 4]
-calc = SpectrumCalculator(sconfig, [config1, config2]
-                          , selected=None)
+selected_data = [1, 2]
+calc = SpectrumCalculator(sconfig, [config1, config2, config3]
+                          , selected=selected_data)
 calc.calc_spec()
 #print(calc.s)
 #print('----------------------------')
-print(calc.s_err)
+#print(calc.s_err)
 #print('----------------------------')
-#calc.display()
+calc.display()
 #plt.plot(calc.freq[0][2], calc.s[0][2].real)
 #plt.plot(calc.freq[1][2], calc.s[1][2].real)
-#plt.plot(calc.freq[2][2], calc.s[2][2].real)
-#plt.show()
+plt.plot(calc.freq[2][2], calc.s[2][2].real)
+plt.show()
 #print(calc.freq)
