@@ -8,6 +8,7 @@ import torch
 from numba import njit
 from scipy.fft import rfftfreq
 from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+from MultiSS_CrossConfig import CrossConfig
 import pandas as pd
 from tabulate import tabulate
 
@@ -82,9 +83,11 @@ def cg_window(n_windows, fs):
 
 class SpectrumCalculator:
     def __init__(self, sconfig: SpectrumConfig,
+                       cconfig: CrossConfig, 
                        diconfig_list: list[DataImportConfig],
                        selected=None):
         self.sconfig = sconfig
+        self.cconfig = cconfig
         self.diconfig_list = diconfig_list
         self.selected = selected
 
@@ -92,24 +95,53 @@ class SpectrumCalculator:
         if self.selected is None:
             self.selected = list(range(len(diconfig_list)))
 
+        self.cross2_selected = self.cconfig.cross_corr_2 if hasattr(self.cconfig, 'cross_corr_2') and isinstance(self.cconfig.cross_corr_2, list) else []
+
         self.device = torch.device(self.sconfig.backend)
         self.t_window = None
         self.t_unit = unit_conversion(sconfig.f_unit)
-        self.n_chunks = [0] * len(diconfig_list)
-        self.m = {1: None} # if different m needed for different orders
-        self.m_var = {1: None} # if different m needed for different orders
+        self.n_chunks = [0] * len(self.diconfig_list)
+        self.m = {1: None, 2: None}
+        self.m_var = {1: None, 2: None}
         self.fs = 1 / self.sconfig.dt
-        self.freq = {i: {2: None} for i in self.selected}
-        self.f_lists = {i: {2: None, 3: None, 4: None} for i in self.selected}
-        self.s = {i: {1: None, 2: None} for i in self.selected}
-        self.s_gpu = {i: {1: None, 2: None} for i in self.selected}
-        self.s_err = {i: {1: None, 2: None} for i in self.selected}
-        self.s_err_gpu = {i: {1: None, 2:None} for i in self.selected}
-        self.s_errs = {i: {1: None, 2: []} for i in self.selected}
-        self.err_counter = {i: {1: 0, 2: 0} for i in self.selected}
-        self.n_error_estimates = {i: 0 for i in self.selected}
-        self.validate_shapes() # crashing the program if the data are not
-                               # equally long
+        self.freq = {
+            **{i: {2: None} for i in self.selected},
+            **{j: {2: None} for j in self.cross2_selected}
+        }
+        self.f_lists = {
+            **{i: {2: None, 3: None, 4: None} for i in self.selected},
+            **{j: {2: None, 3: None, 4: None} for j in self.cross2_selected}
+        }
+        self.s = {
+            **{i: {1: None, 2: None} for i in self.selected},
+            **{j: {2: None} for j in self.cross2_selected}
+        }
+        self.s_gpu = {
+            **{i: {1: None, 2: None} for i in self.selected},
+            **{j: {2: None} for j in self.cross2_selected}
+        }
+        self.s_err = {
+            **{i: {1: None, 2: None} for i in self.selected},
+            **{j: {2: None} for j in self.cross2_selected}
+        }
+        self.s_err_gpu = {
+            **{i: {1: None, 2: None} for i in self.selected},
+            **{j: {2: None} for j in self.cross2_selected}
+        }
+        self.s_errs = {
+            **{i: {1: None, 2: []} for i in self.selected},
+            **{j: {2: []} for j in self.cross2_selected}
+        }
+        self.err_counter = {
+            **{i: {1: 0, 2: 0} for i in self.selected},
+            **{j: {2: 0} for j in self.cross2_selected}
+        }
+        self.n_error_estimates = {
+            **{i: 0 for i in self.selected},
+            **{j: 0 for j in self.cross2_selected}
+        }
+        self.validate_shapes() # crashing the program if the data are not equally long
+
         # insurring MPS backend precision support
         if self.sconfig.backend == 'mps':
             self.use_float32 = True
@@ -122,7 +154,7 @@ class SpectrumCalculator:
         """
         making sure that all the imported data have the same size and shape
         """
-        expected_shape = self.diconfig_list[0].data.shape[0]
+        expected_shape = self.diconfig_list[self.selected[0]].data.shape[0]
 
         for i, data_config in enumerate(self.diconfig_list):
             data_shape = data_config.data.shape[0]
@@ -186,10 +218,7 @@ class SpectrumCalculator:
         self.err_counter[dataset_idx][order] += 1
 
         if self.err_counter[dataset_idx][order] % self.sconfig.m_var == 0:
-            if order == 1 or order == 2:
-                dim = 1
-            else:
-                dim = 2
+            dim = 1 if order in [1, 2] else 2
 
             if order == self.orders[0]:
                 self.n_error_estimates[dataset_idx] += 1
@@ -227,9 +256,7 @@ class SpectrumCalculator:
                     a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
                 else:
                     a_w = coeffs_gpu
-                single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt *
-                                                       (single_window**2).sum()
-                                                      )
+                single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt * (single_window**2).sum())
 
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order,
                                        dataset_idx)
@@ -255,8 +282,14 @@ class SpectrumCalculator:
             return self.sconfig.order_in
 
     def reset_variables(self, orders, f_lists=None):
-        self.err_counter = {i: {1: 0, 2: 0} for i in range(len(self.diconfig_list))}
-        self.n_error_estimates = {i: 0 for i in range(len(self.diconfig_list))}
+        self.err_counter = {
+            **{i: {1: 0, 2: 0} for i in self.selected},
+            **{j: {2: 0} for j in self.cross2_selected}
+        }
+        self.n_error_estimates = {
+            **{i: 0 for i in self.selected},
+            **{j: 0 for j in self.cross2_selected}
+        }
         for dataset_idx in self.selected:
             for order in orders:
                 self.f_lists[order] = f_lists
@@ -268,6 +301,16 @@ class SpectrumCalculator:
                 self.s_errs[dataset_idx][order] = []
                 self.m[order] = self.sconfig.m
                 self.m_var[order] = self.sconfig.m_var
+
+        for cross2_idx in self.cross2_selected:
+            for order in orders:
+                    self.f_lists[cross2_idx][order] = f_lists
+                    self.freq[cross2_idx][order] = None
+                    self.s[cross2_idx][order] = None
+                    self.s_gpu[cross2_idx][order] = None
+                    self.s_err[cross2_idx][order] = None
+                    self.s_err_gpu[cross2_idx][order] = None
+                    self.s_errs[cross2_idx][order] = []
 
     def reset(self):
         orders = self.process_order()
@@ -286,11 +329,10 @@ class SpectrumCalculator:
 
         self.t_window = (self.sconfig.spectrum_size - 1) * (
                                 2 * self.sconfig.dt * window_len_factor)
-        n_data_points = self.diconfig_list[0].data.shape[0] # since all data
-                                                            # are equally long
-                                                            # we can just take
-                                                            # the shape of one
-                                                            # of them
+
+        # since all data are equally long we can just take the shape of one of them
+        n_data_points = self.diconfig_list[self.selected[0]].data.shape[0] 
+
         window_points = int(np.round(self.t_window / self.sconfig.dt))
 
         if not window_points * self.sconfig.m + window_points // 2 < n_data_points:
@@ -355,15 +397,17 @@ class SpectrumCalculator:
             self.array_prep(orders, freq_all_freq[f_min_idx:f_max_idx]
                                     , dataset_idx)
             for i in tqdm(np.arange(0, n_windows, 1), leave=False):
-                shift_iter = [0, window_points // 2] # needed for correct
-                                                     # position of the
-                                                     # window functions
+                
+                # needed for correct position of the window functions
+                shift_iter = [0, window_points // 2] 
+
                 # the interlaced calculation must be applied on every input
                 for window_shift in shift_iter:
-                    chunk = data_config.data[
-                        int(i * (window_points * m)
-                            + window_shift): int((i + 1) * (window_points * m)
-                                                            + window_shift)]
+                    starting_idx = int(i * (window_points * m) + window_shift)
+                    ending_idx = int((i + 1) * (window_points * m) + window_shift)
+
+                    chunk = data_config.data[starting_idx:ending_idx]
+
                     if not chunk.shape[0] == window_points * m:
                         break
 
@@ -386,12 +430,14 @@ class SpectrumCalculator:
                                                    single_window, dataset_idx)
                     if self.n_chunks[dataset_idx] == self.sconfig.break_after:
                         break
+
         for dataset_idx in self.selected:
-            self.store_final_spectrum(orders, self.n_chunks[dataset_idx]
-                                      , dataset_idx)
+            self.store_final_spectrum(orders, self.n_chunks[dataset_idx], dataset_idx)
+
         return self.freq, self.s, self.s_err
 
     def display(self):
+        # TODO: such functions for displaying the resutls need a new class
         all_results = []
 
         # Collect data from each dataset
@@ -436,8 +482,9 @@ config3 = DataImportConfig(data=data3)
 
 sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps', order_in=[1, 2],
                          spectrum_size=1000, show_first_frame=False)
-selected_data = [1, 2]
-calc = SpectrumCalculator(sconfig, [config1, config2, config3]
+selected_data = [0, 1, 2]
+cconfig = CrossConfig(cross_corr_2=[(1, 2)])
+calc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3]
                           , selected=selected_data)
 calc.calc_spec()
 #print(calc.s)
@@ -447,6 +494,6 @@ calc.calc_spec()
 calc.display()
 #plt.plot(calc.freq[0][2], calc.s[0][2].real)
 #plt.plot(calc.freq[1][2], calc.s[1][2].real)
-plt.plot(calc.freq[2][2], calc.s[2][2].real)
-plt.show()
+#plt.plot(calc.freq[2][2], calc.s[2][2].real)
+#plt.show()
 #print(calc.freq)
