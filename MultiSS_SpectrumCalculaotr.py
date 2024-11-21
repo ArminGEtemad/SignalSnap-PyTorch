@@ -100,7 +100,10 @@ class SpectrumCalculator:
         self.device = torch.device(self.sconfig.backend)
         self.t_window = None
         self.t_unit = unit_conversion(sconfig.f_unit)
-        self.n_chunks = [0] * len(self.diconfig_list)
+        self.n_chunks = {
+            **{i: 0 for i in self.selected},  # For individual datasets
+            **{(key1, key2): 0 for key1, key2 in self.cross2_selected}  # For cross-correlation pairs
+        }
         self.m = {1: None, 2: None}
         self.m_var = {1: None, 2: None}
         self.fs = 1 / self.sconfig.dt
@@ -137,8 +140,8 @@ class SpectrumCalculator:
             **{j: {2: 0} for j in self.cross2_selected}
         }
         self.n_error_estimates = {
-            **{i: 0 for i in self.selected},
-            **{j: 0 for j in self.cross2_selected}
+            **{i: {1: 0, 2: 0} for i in self.selected},
+            **{j: {2: 0} for j in self.cross2_selected}
         }
         self.validate_shapes() # crashing the program if the data are not equally long
 
@@ -211,40 +214,52 @@ class SpectrumCalculator:
             self.s_gpu[dataset_idx][order] = single_spectrum
         else:
             self.s_gpu[dataset_idx][order] += single_spectrum
+
         if order == 1:
             self.s_errs[dataset_idx][order][0, self.err_counter[dataset_idx][order]] = single_spectrum
         elif order == 2:
             self.s_errs[dataset_idx][order][:, self.err_counter[dataset_idx][order]] = single_spectrum
+
         self.err_counter[dataset_idx][order] += 1
 
         if self.err_counter[dataset_idx][order] % self.sconfig.m_var == 0:
             dim = 1 if order in [1, 2] else 2
 
-            if order == self.orders[0]:
-                self.n_error_estimates[dataset_idx] += 1
+            # Increment error estimates unconditionally
+            self.n_error_estimates[dataset_idx][order] += 1
 
             factor = self.sconfig.m_var / (self.sconfig.m_var - 1)
             mean_squared = torch.mean(self.s_errs[dataset_idx][order]**2, dim=dim)
-            squared_mean = torch.mean(self.s_errs[dataset_idx][order],dim=dim)**2
-            s_err_gpu = factor*(mean_squared - squared_mean)
-            self.s_err_gpu = s_err_gpu / self.sconfig.m_var
+            squared_mean = torch.mean(self.s_errs[dataset_idx][order], dim=dim)**2
+            s_err_gpu = factor * (mean_squared - squared_mean)
+            s_err_gpu /= self.sconfig.m_var  # Corrected this line as well
 
             if self.s_err[dataset_idx][order] is None:
-                self.s_err[dataset_idx][order] = self.s_err_gpu.cpu().numpy()
+                self.s_err[dataset_idx][order] = s_err_gpu.cpu().numpy()
             else:
-                self.s_err[dataset_idx][order] += self.s_err_gpu.cpu().numpy()
+                self.s_err[dataset_idx][order] += s_err_gpu.cpu().numpy()
             self.err_counter[dataset_idx][order] = 0
 
     def store_final_spectrum(self, orders, n_chunks, dataset_idx):
         for order in orders:
-            self.s_gpu[dataset_idx][order] /= n_chunks
-            self.s[dataset_idx][order] = self.s_gpu[dataset_idx][order].cpu().resolve_conj().numpy()
-            self.s_err[dataset_idx][order] = (1 / self.n_error_estimates[dataset_idx]) * np.sqrt(self.s_err[dataset_idx][order])
-            self.s_err[dataset_idx][order] /= 2 # for interlaced calculation
+            if order in self.s_gpu.get(dataset_idx, {}):
+                if self.s_gpu[dataset_idx][order] is not None:
+                    # Average the accumulated spectrum
+                    self.s_gpu[dataset_idx][order] /= n_chunks
+                    self.s[dataset_idx][order] = self.s_gpu[dataset_idx][order].cpu().resolve_conj().numpy()
+                    # Compute the error estimate
+                    self.s_err[dataset_idx][order] = (
+                        (1 / self.n_error_estimates[dataset_idx][order]) * np.sqrt(self.s_err[dataset_idx][order])
+                    )
+                    self.s_err[dataset_idx][order] /= 2  # for interlaced calculation
+                else:
+                    # s_gpu[dataset_idx][order] is None, skip processing
+                    pass
+            else:
+                # The order doesn't exist for this dataset_idx, skip processing
+                pass
 
-
-    def fourier_coeffs_to_spectra(self, orders, coeffs_gpu, f_min_idx,
-                                  f_max_idx, single_window, dataset_idx):
+    def fourier_coeffs_to_spectra(self, orders, coeffs_gpu, f_min_idx, f_max_idx, single_window, dataset_idx):
         for order in orders:
             if order == 1:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
@@ -258,8 +273,20 @@ class SpectrumCalculator:
                     a_w = coeffs_gpu
                 single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt * (single_window**2).sum())
 
-            self.store_sum_single_spectrum(torch.conj(single_spectrum), order,
-                                       dataset_idx)
+            self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
+
+    def fourier_coeffs_to_cross_spectra(self, orders, coeffs_gpu_dict, f_min_idx, f_max_idx, single_window, key1, key2):
+        for order in orders:
+            if order == 2:
+                if self.sconfig.f_lists is None:
+                    a_w1 = coeffs_gpu_dict[key1][:, f_min_idx:f_max_idx, :]
+                    a_w2 = coeffs_gpu_dict[key2][:, f_min_idx:f_max_idx, :]
+                else:
+                    a_w1 = coeffs_gpu_dict[key1]
+                    a_w2 = coeffs_gpu_dict[key2]
+                single_spectrum = self.c2(a_w1, a_w2) / (self.sconfig.dt * (single_window**2).sum())
+
+            self.store_sum_single_spectrum(torch.conj(single_spectrum), order, (key1, key2))
 
     def array_prep(self, orders, f_all_in, dataset_idx):
         f_max_idx = f_all_in.shape[0]
@@ -287,9 +314,9 @@ class SpectrumCalculator:
             **{j: {2: 0} for j in self.cross2_selected}
         }
         self.n_error_estimates = {
-            **{i: 0 for i in self.selected},
-            **{j: 0 for j in self.cross2_selected}
-        }
+            **{i: {1: 0, 2: 0} for i in self.selected},
+            **{j: {2: 0} for j in self.cross2_selected}
+        }        
         for dataset_idx in self.selected:
             for order in orders:
                 self.f_lists[order] = f_lists
@@ -324,11 +351,9 @@ class SpectrumCalculator:
         if self.sconfig.f_max is None:
             self.sconfig.f_max = f_max_allowed
 
-        window_len_factor = f_max_allowed / (self.sconfig.f_max -
-                                             self.sconfig.f_min)
+        window_len_factor = f_max_allowed / (self.sconfig.f_max - self.sconfig.f_min)
 
-        self.t_window = (self.sconfig.spectrum_size - 1) * (
-                                2 * self.sconfig.dt * window_len_factor)
+        self.t_window = (self.sconfig.spectrum_size - 1) * (2 * self.sconfig.dt * window_len_factor)
 
         # since all data are equally long we can just take the shape of one of them
         n_data_points = self.diconfig_list[self.selected[0]].data.shape[0] 
@@ -373,10 +398,12 @@ class SpectrumCalculator:
         calculating spectra using pytorch 
         """
         orders = self.reset()
+        # Set cross_orders to only [2] for cross-correlations
+        cross_orders = [2]
 
         m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = (
-                                                self.setup_calc_spec(orders)
-                                                                           )
+            self.setup_calc_spec(orders)
+        )
 
         for order in orders:
             self.m[order] = m
@@ -392,49 +419,95 @@ class SpectrumCalculator:
 
         if self.sconfig.show_first_frame:
             self.plot_first_frames(self.selected, window_points)
-        for dataset_idx in self.selected:
-            data_config = self.diconfig_list[dataset_idx]
-            self.array_prep(orders, freq_all_freq[f_min_idx:f_max_idx]
-                                    , dataset_idx)
-            for i in tqdm(np.arange(0, n_windows, 1), leave=False):
-                
-                # needed for correct position of the window functions
-                shift_iter = [0, window_points // 2] 
 
-                # the interlaced calculation must be applied on every input
-                for window_shift in shift_iter:
+        data_configs = [self.diconfig_list[dataset_idx] for dataset_idx in self.selected]
+        for dataset_idx in self.selected:
+            self.array_prep(orders, freq_all_freq[f_min_idx:f_max_idx], dataset_idx)
+
+        if self.cross2_selected is not None:
+            for pair in self.cross2_selected:
+                self.array_prep(cross_orders, freq_all_freq[f_min_idx:f_max_idx], pair)
+
+        for i in tqdm(np.arange(0, n_windows, 1), leave=False):
+            shift_iter = [0, window_points // 2]
+
+            for window_shift in shift_iter:
+                a_w_all_dict = {}  # Dictionary to store Fourier-transformed data
+
+                for dataset_idx in self.selected:
+                    data_config = self.diconfig_list[dataset_idx]
+
                     starting_idx = int(i * (window_points * m) + window_shift)
                     ending_idx = int((i + 1) * (window_points * m) + window_shift)
 
                     chunk = data_config.data[starting_idx:ending_idx]
 
-                    if not chunk.shape[0] == window_points * m:
-                        break
+                    # Validate and process chunk
+                    if chunk.shape[0] == window_points * m:
+                        chunk_r = chunk.reshape((m, window_points, 1))
 
-                    chunk_r = chunk.reshape((m, window_points, 1))
+                        # Transfer chunk to GPU
+                        if self.use_float32:
+                            chunk_gpu = torch.from_numpy(chunk_r.astype(np.float32)).to(self.device)
+                        else:
+                            chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
 
-                    if self.use_float32:
-                        chunk_gpu = torch.from_numpy(chunk_r.astype(np.float32)).to(self.device)
+                        # Perform Fourier Transform
+                        a_w_all_gpu = torch.fft.rfft(window * chunk_gpu, dim=1)
+                        a_w_all_gpu *= self.sconfig.dt  # Scale correction
+
+                        # Store Fourier-transformed data in the dictionary
+                        a_w_all_dict[dataset_idx] = a_w_all_gpu
                     else:
-                        chunk_gpu = torch.from_numpy(chunk_r).to(self.device)
+                        a_w_all_dict[dataset_idx] = None 
 
-                    self.n_chunks[dataset_idx] += 1
+                # Process auto-correlation (individual datasets)
+                if self.cconfig.auto_corr:
+                    for dataset_idx, a_w_all_gpu in a_w_all_dict.items():
+                        if a_w_all_gpu is None:  # Skip invalid data
+                            continue
 
-                    # performing Fourier Trafo
-                    a_w_all_gpu = torch.fft.rfft(window * chunk_gpu, dim=1)
-                    a_w_all_gpu *= self.sconfig.dt # scale correction
+                        self.n_chunks[dataset_idx] += 1
 
-                    # calculating spectra
-                    self.fourier_coeffs_to_spectra(orders, a_w_all_gpu,
-                                                   f_min_idx, f_max_idx,
-                                                   single_window, dataset_idx)
-                    if self.n_chunks[dataset_idx] == self.sconfig.break_after:
-                        break
+                        self.fourier_coeffs_to_spectra(
+                            orders, a_w_all_gpu, f_min_idx, f_max_idx, single_window, dataset_idx
+                        )
 
+                        # Break if the dataset reaches its processing limit
+                        if self.n_chunks[dataset_idx] == self.sconfig.break_after:
+                            break
+
+                # Process cross-correlations
+                if self.cross2_selected is not None:
+                    for pair in self.cross2_selected:
+                        key1, key2 = pair
+
+                        # Skip if either dataset is invalid
+                        if a_w_all_dict.get(key1) is None or a_w_all_dict.get(key2) is None:
+                            continue
+
+                        self.n_chunks[(key1, key2)] += 1
+
+                        # Call the cross-spectra function with cross_orders=[2]
+                        self.fourier_coeffs_to_cross_spectra(
+                            cross_orders, a_w_all_dict, f_min_idx, f_max_idx, single_window, key1, key2
+                        )
+
+                        # Stop processing if chunk limit is reached
+                        if self.n_chunks[(key1, key2)] == self.sconfig.break_after:
+                            break
+
+        # Store the final spectrum for each dataset or pair
         for dataset_idx in self.selected:
             self.store_final_spectrum(orders, self.n_chunks[dataset_idx], dataset_idx)
 
+        if self.cross2_selected is not None:
+            for pair in self.cross2_selected:
+                key1, key2 = pair
+                self.store_final_spectrum(cross_orders, self.n_chunks[(key1, key2)], (key1, key2))
+
         return self.freq, self.s, self.s_err
+
 
     def display(self):
         # TODO: such functions for displaying the resutls need a new class
@@ -470,8 +543,8 @@ class SpectrumCalculator:
 # ----------------------------------------------------------------------------
 # testing
 N = int(1e6)
-data1 = np.sin(np.linspace(0, 50*np.pi, N)) + 4
-data2 = np.cos(np.linspace(0, 50*np.pi, N)) + 3
+data1 = np.sin(np.linspace(0, 500000*np.pi, N)) + 4
+data2 = np.cos(np.linspace(0, 500000*np.pi, N)) + 3
 data3 = np.random.rand(N)
 #data4 = np.cos(np.linspace(0, 50000*np.pi, N)) + 9
 
@@ -483,17 +556,19 @@ config3 = DataImportConfig(data=data3)
 sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps', order_in=[1, 2],
                          spectrum_size=1000, show_first_frame=False)
 selected_data = [0, 1, 2]
-cconfig = CrossConfig(cross_corr_2=[(1, 2)])
+cconfig = CrossConfig(cross_corr_2=[(1, 0), (0, 1), (0, 2)])
 calc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3]
                           , selected=selected_data)
 calc.calc_spec()
-#print(calc.s)
+print(calc.s)
 #print('----------------------------')
 #print(calc.s_err)
 #print('----------------------------')
-calc.display()
+#calc.display()
 #plt.plot(calc.freq[0][2], calc.s[0][2].real)
 #plt.plot(calc.freq[1][2], calc.s[1][2].real)
-#plt.plot(calc.freq[2][2], calc.s[2][2].real)
-#plt.show()
+plt.plot(calc.freq[(1, 0)][2], calc.s[(1, 0)][2].imag)
+plt.plot(calc.freq[(0, 1)][2], calc.s[(0, 1)][2].imag)
+plt.plot(calc.freq[(0, 2)][2], calc.s[(0, 2)][2].imag)
+plt.show()
 #print(calc.freq)
