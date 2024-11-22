@@ -1,0 +1,45 @@
+from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+from MultiSS_SpectrumCalculaotr import SpectrumCalculator
+from MultiSS_CrossConfig import CrossConfig
+from MultiSS_PlotConfig import PlotConfig
+from MultiSS_SpectrumPlotter import SpectrumPlotter
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ----------------------------------------------------------------------------
+# testing
+N = int(1e6)
+data1 = np.sin(np.linspace(0, 50000*np.pi, N)) + 3
+data2 = np.cos(np.linspace(0, 50000*np.pi, N)) + 3
+data3 = np.random.rand(N)
+#data4 = np.cos(np.linspace(0, 50000*np.pi, N)) + 9
+
+config1 = DataImportConfig(data=data1)
+config2 = DataImportConfig(data=data2)
+config3 = DataImportConfig(data=data3)
+#config4 = DataImportConfig(data=data4)
+
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu', order_in=[1, 2], spectrum_size=1000, show_first_frame=False)
+selected_data = [0, 1]
+cconfig = CrossConfig(cross_corr_2=[(1, 0), (0, 1)])
+scalc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3], selected=selected_data)
+
+pconfig = PlotConfig(f_min=0, f_max=0.2, display_orders=None, significance=1, arcsinh_scale=(False, 0.02), plot_format=['re', 'im'])
+
+scalc.calc_spec()
+
+plotter = SpectrumPlotter(sconfig, cconfig, scalc, pconfig)
+plotter.display()
+#print(calc.s)
+#print('----------------------------')
+#print(calc.s_err)
+#print('----------------------------')
+#calc.display()
+#plt.plot(calc.freq[0][2], calc.s[0][2].real)
+#plt.plot(calc.freq[1][2], calc.s[1][2].real)
+#plt.plot(calc.freq[(1, 0)][2], calc.s[(1, 0)][2].imag)
+#plt.plot(calc.freq[(0, 1)][2], calc.s[(0, 1)][2].imag)
+#plt.plot(calc.freq[(0, 2)][2], calc.s[(0, 2)][2].imag)
+#plt.show()
+#print(calc.freq)

@@ -331,13 +331,13 @@ class SpectrumCalculator:
 
         for cross2_idx in self.cross2_selected:
             for order in orders:
-                    self.f_lists[cross2_idx][order] = f_lists
-                    self.freq[cross2_idx][order] = None
-                    self.s[cross2_idx][order] = None
-                    self.s_gpu[cross2_idx][order] = None
-                    self.s_err[cross2_idx][order] = None
-                    self.s_err_gpu[cross2_idx][order] = None
-                    self.s_errs[cross2_idx][order] = []
+                self.f_lists[cross2_idx][order] = f_lists
+                self.freq[cross2_idx][order] = None
+                self.s[cross2_idx][order] = None
+                self.s_gpu[cross2_idx][order] = None
+                self.s_err[cross2_idx][order] = None
+                self.s_err_gpu[cross2_idx][order] = None
+                self.s_errs[cross2_idx][order] = []
 
     def reset(self):
         orders = self.process_order()
@@ -470,8 +470,7 @@ class SpectrumCalculator:
                         self.n_chunks[dataset_idx] += 1
 
                         self.fourier_coeffs_to_spectra(
-                            orders, a_w_all_gpu, f_min_idx, f_max_idx, single_window, dataset_idx
-                        )
+                            orders, a_w_all_gpu, f_min_idx, f_max_idx, single_window, dataset_idx)
 
                         # Break if the dataset reaches its processing limit
                         if self.n_chunks[dataset_idx] == self.sconfig.break_after:
@@ -490,8 +489,7 @@ class SpectrumCalculator:
 
                         # Call the cross-spectra function with cross_orders=[2]
                         self.fourier_coeffs_to_cross_spectra(
-                            cross_orders, a_w_all_dict, f_min_idx, f_max_idx, single_window, key1, key2
-                        )
+                            cross_orders, a_w_all_dict, f_min_idx, f_max_idx, single_window, key1, key2)
 
                         # Stop processing if chunk limit is reached
                         if self.n_chunks[(key1, key2)] == self.sconfig.break_after:
@@ -507,68 +505,3 @@ class SpectrumCalculator:
                 self.store_final_spectrum(cross_orders, self.n_chunks[(key1, key2)], (key1, key2))
 
         return self.freq, self.s, self.s_err
-
-
-    def display(self):
-        # TODO: such functions for displaying the resutls need a new class
-        all_results = []
-
-        # Collect data from each dataset
-        for dataset_idx in self.selected:
-            for order in self.orders:
-                if order == 1:
-                    if self.s[dataset_idx][order] is not None and self.s_err[dataset_idx][order] is not None:
-                        # Create a list of dictionaries for each row
-                        spectrum = self.s[dataset_idx][order]
-                        error_estimate = self.s_err[dataset_idx][order]
-
-                        for i in range(len(spectrum)):
-                            all_results.append({
-                                'Dataset Index': dataset_idx.real,
-                                'S1': spectrum[i].real,
-                                'Error S1': error_estimate[i].real
-                            })
-                else:
-                    print(f"Visualization for order {order} is not implemented yet.")
-
-        # Create a DataFrame from the collected results
-        df = pd.DataFrame(all_results)
-
-        # Display the DataFrame using tabulate for a formatted table
-        if not df.empty:
-            print(tabulate(df, headers='keys', tablefmt='pretty',
-                           showindex=False))
-        else:
-            print("No results available for order 1.")
-# ----------------------------------------------------------------------------
-# testing
-N = int(1e6)
-data1 = np.sin(np.linspace(0, 500000*np.pi, N)) + 4
-data2 = np.cos(np.linspace(0, 500000*np.pi, N)) + 3
-data3 = np.random.rand(N)
-#data4 = np.cos(np.linspace(0, 50000*np.pi, N)) + 9
-
-config1 = DataImportConfig(data=data1)
-config2 = DataImportConfig(data=data2)
-config3 = DataImportConfig(data=data3)
-#config4 = DataImportConfig(data=data4)
-
-sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='mps', order_in=[1, 2],
-                         spectrum_size=1000, show_first_frame=False)
-selected_data = [0, 1, 2]
-cconfig = CrossConfig(cross_corr_2=[(1, 0), (0, 1), (0, 2)])
-calc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3]
-                          , selected=selected_data)
-calc.calc_spec()
-print(calc.s)
-#print('----------------------------')
-#print(calc.s_err)
-#print('----------------------------')
-#calc.display()
-#plt.plot(calc.freq[0][2], calc.s[0][2].real)
-#plt.plot(calc.freq[1][2], calc.s[1][2].real)
-plt.plot(calc.freq[(1, 0)][2], calc.s[(1, 0)][2].imag)
-plt.plot(calc.freq[(0, 1)][2], calc.s[(0, 1)][2].imag)
-plt.plot(calc.freq[(0, 2)][2], calc.s[(0, 2)][2].imag)
-plt.show()
-#print(calc.freq)
