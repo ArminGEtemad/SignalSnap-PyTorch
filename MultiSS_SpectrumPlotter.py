@@ -16,13 +16,18 @@ class SpectrumPlotter:
 		self.pconfig = pconfig
 
 	def import_spec_data(self, order, keys):
-		s_data = self.scalc.s[keys][order].copy()
-		s_err_data = self.scalc.s_err[keys][order].copy()
-		freq_data = self.scalc.freq[keys][order].copy()
+	    """
+	    Import spectrum data, handling cases where the order or keys might not exist.
+	    """
+	    try:
+	        s_data = self.scalc.s[keys][order].copy() if self.scalc.s[keys][order] is not None else None
+	        s_err_data = self.scalc.s_err[keys][order].copy() if self.scalc.s_err[keys][order] is not None else None
+	        freq_data = self.scalc.freq[keys][order].copy() if self.scalc.freq[keys][order] is not None else None
+	    except (KeyError, AttributeError):
+	        s_data, s_err_data, freq_data = None, None, None  # Handle missing data gracefully
+	    return s_data, s_err_data, freq_data
 
-		return s_data, s_err_data, freq_data
-
-	def signif_calculate(self, s_data, s_err_data):
+	def signif_bound_calculate(self, s_data, s_err_data):
 	    """
 	    Calculates the significance bounds for the given spectrum data.
 	    """
@@ -30,6 +35,16 @@ class SpectrumPlotter:
 	        [s_data + (i + 1) * s_err_data for i in range(self.pconfig.significance)],
 	        [s_data - (i + 1) * s_err_data for i in range(self.pconfig.significance)]
 	    ]
+
+	def arcsinh_scale(self, s_data, s_err_data):
+		s_max = np.max(np.abs(s_data))
+		scale = 1 / (s_max * self.pconfig.arcsinh_scale[1])
+		s_data = np.arcsinh(scale * s_data) / scale
+
+		if s_err_data is not None:
+			s_err_data = np.arcsinh(scale * s_err_data) / scale
+
+		return s_data, s_err_data
 
 	def display_s1(self, order, keys, source):
 	    """
@@ -56,6 +71,7 @@ class SpectrumPlotter:
 	    """
 	    Function to handle plotting for order 2. Displays real and/or imaginary parts based on plot_format,
 	    with significance bounds shaded in gray and the area between filled.
+	    Additionally, displays a table for scaling information (once, as it's shared across all plots).
 	    """
 	    def plot_data(ax, freq_data, s_data, signif_bounds, component, label_prefix):
 	        """
@@ -88,6 +104,10 @@ class SpectrumPlotter:
 	        ax.set_xlim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
 	        ax.legend()
 
+	    # Initialize variables for scaling information
+	    scaled = False
+	    scale_factor = None
+
 	    num_columns = len(self.pconfig.plot_format)
 	    num_datasets = len(datasets)
 
@@ -106,7 +126,18 @@ class SpectrumPlotter:
 	        s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
 
 	        if s_data is not None and freq_data is not None and s_err_data is not None:
-	            signif_bounds = self.signif_calculate(s_data, s_err_data)
+	            # Check and apply arcsinh scaling (once)
+	            if scale_factor is None and self.pconfig.arcsinh_scale[0]:
+	                scaled = True
+	                s_max = np.max(np.abs(s_data))
+	                scale_factor = self.pconfig.arcsinh_scale[1]
+
+	            # Apply scaling (if enabled)
+	            if self.pconfig.arcsinh_scale[0]:
+	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+
+	            # Plot the data
+	            signif_bounds = self.signif_bound_calculate(s_data, s_err_data)
 	            for col, ax in enumerate(ax_row):
 	                component = 'real' if self.pconfig.plot_format[col] == 're' else 'imag'
 	                plot_data(ax, freq_data, s_data, signif_bounds, component, f'{source}: Dataset {keys}')
@@ -129,6 +160,15 @@ class SpectrumPlotter:
 
 	    plt.tight_layout()
 	    plt.show()
+
+	    # Display the scaling information (once)
+	    s2_table_data = [{
+	        'Arcsinh Scaled': scaled,
+	        'Scale Factor': scale_factor if scaled else "N/A"
+	    }]
+	    s2_table = pd.DataFrame(s2_table_data)
+	    print("\nS2 Scaling Information:")
+	    print(tabulate(s2_table, headers='keys', tablefmt='pretty', showindex=False))
 
 	def display(self):
 	    all_results = []

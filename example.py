@@ -20,18 +20,18 @@ config2 = DataImportConfig(data=data2)
 config3 = DataImportConfig(data=data3)
 #config4 = DataImportConfig(data=data4)
 
-sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu', order_in=[1, 2], spectrum_size=1000, show_first_frame=False)
+sconfig = SpectrumConfig(dt=1, f_unit='Hz', backend='cpu', order_in=[2], spectrum_size=1000, show_first_frame=False)
 selected_data = [0, 1]
-cconfig = CrossConfig(cross_corr_2=[(1, 0), (0, 1)])
+cconfig = CrossConfig(auto_corr=True, cross_corr_2=None)
 scalc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3], selected=selected_data)
 
-pconfig = PlotConfig(f_min=0, f_max=0.2, display_orders=None, significance=1, arcsinh_scale=(False, 0.02), plot_format=['re', 'im'])
+pconfig = PlotConfig(f_min=0, f_max=0.2, display_orders=None, significance=1, arcsinh_scale=(True, 0.02), plot_format=['re', 'im'])
 
 scalc.calc_spec()
 
 plotter = SpectrumPlotter(sconfig, cconfig, scalc, pconfig)
 plotter.display()
-#print(calc.s)
+#print(scalc.s)
 #print('----------------------------')
 #print(calc.s_err)
 #print('----------------------------')
