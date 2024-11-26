@@ -143,7 +143,9 @@ class SpectrumCalculator:
             **{i: {1: 0, 2: 0} for i in self.selected},
             **{j: {2: 0} for j in self.cross2_selected}
         }
+        self.import_data()
         self.validate_shapes() # crashing the program if the data are not equally long
+
 
         # insurring MPS backend precision support
         if self.sconfig.backend == 'mps':
@@ -164,6 +166,21 @@ class SpectrumCalculator:
             if data_shape != expected_shape:
                 raise ValueError('Imported data must have same length!')
 
+    def import_data(self):
+        for data_config in self.diconfig_list:
+            if data_config.data is None and data_config.path is not None:
+                with h5py.File(data_config.path, 'r') as main:
+                    if data_config.group_key == '' or data_config.group_key is None:
+                        main_data = main[data_config.dataset]
+                    else:
+                        main_group = main[data_config.group_key]
+                        main_data = main_group[data_config.dataset]
+                    # If dt is not set in data_config, attempt to read it from the file attributes
+                    if data_config.dt is None:
+                        data_config.dt = main_data.attrs.get('dt', None)
+                    data_config.data = main_data[()]
+                    print(f"Data loaded from {data_config.path}")
+
     def plot_first_frames(self, selected, window_size):
         n_plots = len(selected)
         fig, axes = plt.subplots(n_plots, 1, figsize=(14, 3 * n_plots))
@@ -177,7 +194,7 @@ class SpectrumCalculator:
             t = np.arange(len(first_frame)) * self.sconfig.dt
             axes[i].plot(t, first_frame)
             axes[i].set_xlim([0, t[-1]])
-            axes[i].set_title(f'first frame for data {selected_idx + 1}')
+            axes[i].set_title(f'first frame for data {selected_idx}')
             axes[i].set_xlabel('t / ('+ self.t_unit + ')')
             axes[i].set_ylabel('amplitude')
 
@@ -505,3 +522,4 @@ class SpectrumCalculator:
                 self.store_final_spectrum(cross_orders, self.n_chunks[(key1, key2)], (key1, key2))
 
         return self.freq, self.s, self.s_err
+

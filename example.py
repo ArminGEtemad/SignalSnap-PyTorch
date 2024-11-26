@@ -25,7 +25,7 @@ selected_data = [0, 1]
 cconfig = CrossConfig(auto_corr=True, cross_corr_2=None)
 scalc = SpectrumCalculator(sconfig, cconfig, [config1, config2, config3], selected=selected_data)
 
-pconfig = PlotConfig(f_min=0, f_max=0.2, display_orders=None, significance=1, arcsinh_scale=(True, 0.02), plot_format=['re', 'im'])
+pconfig = PlotConfig(f_min=0, f_max=0.2, display_orders=None, significance=1, arcsinh_scale=(True, 0.02), plot_format=None)
 
 scalc.calc_spec()
 
@@ -43,3 +43,19 @@ plotter.display()
 #plt.plot(calc.freq[(0, 2)][2], calc.s[(0, 2)][2].imag)
 #plt.show()
 #print(calc.freq)
+
+# ---- for the hdf5 files ---
+# Configuration for importing multiple datasets from HDF5
+#config1 = DataImportConfig(path="data.h5", group_key="group1", dataset="dataset1")
+#config2 = DataImportConfig(path="data.h5", group_key="group1", dataset="dataset2")
+#config3 = DataImportConfig(path="data.h5", group_key="group2", dataset="dataset3")
+
+# Load the data
+#config1.load_hdf5()
+#config2.load_hdf5()
+#config3.load_hdf5()
+
+# Access the loaded data
+#data1 = config1.data
+#data2 = config2.data
+#data3 = config3.data

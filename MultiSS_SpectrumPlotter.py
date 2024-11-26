@@ -87,8 +87,8 @@ class SpectrumPlotter:
 	        for i, (upper, lower) in enumerate(zip(signif_bounds[0], signif_bounds[1])):
 	            upper_data = getattr(upper, component)
 	            lower_data = getattr(lower, component)
-	            ax.plot(freq_data, upper_data, linestyle='--', color=str(grays[i]), alpha=0.7)
-	            ax.plot(freq_data, lower_data, linestyle='--', color=str(grays[i]), alpha=0.7)
+	            ax.plot(freq_data, upper_data, linestyle='--', color=str(grays[i]), alpha=0.5)
+	            ax.plot(freq_data, lower_data, linestyle='--', color=str(grays[i]), alpha=0.5)
 	            ax.fill_between(
 	                freq_data, lower_data, upper_data,
 	                color=str(grays[i]), alpha=0.2,

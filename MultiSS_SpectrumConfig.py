@@ -1,4 +1,5 @@
 import numpy as np
+import h5py
 
 class SpectrumConfig:
     def __init__(self, dt, f_unit='Hz', f_max=None, f_min=0, f_lists=None,
@@ -19,12 +20,13 @@ class SpectrumConfig:
         self.break_after = break_after
 
 class DataImportConfig:
-    def __init__(self, data=None, path=None, group_key=None, dataset=None):
-       self.data = data
-       self.path = path
-       self.group_key = group_key
-       self.dataset = dataset
-   
+    def __init__(self, data=None, path=None, group_key=None, dataset=None, dt=None):
+        self.data = data
+        self.path = path
+        self.group_key = group_key
+        self.dataset = dataset
+        self.dt = dt
+
     @staticmethod
     def data_config_dic(data_config_list):
         return {config.data: config for config in data_config_list}
