@@ -7,6 +7,39 @@ import pandas as pd
 import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
+def custom_colormap():
+    # Define the first list of colors (normalized to [0, 1] already)
+    colors_list_1 = [
+        (0, 0, 0.8),         # Dark blue
+        (0.2, 0.4, 1),       # Lighter blue
+        (0.6, 0.7, 1),       # Pale blue
+        (0.92, 0.92, 0.92),   # Neutral gray at zero
+        (1, 0.6, 0.6),       # Pale red
+        (1, 0.2, 0.2),       # Medium red
+        (0.8, 0, 0)          # Dark red
+    ]
+    
+    # Define the second list of colors in RGB (0-255 scale)
+    colors_list = [
+        (23, 51, 107),      # Dark blue
+        (82, 137, 190),     # Lighter blue
+        (165, 203, 230),    # Pale blue
+        (0.92*255, 0.92*255, 0.92*255),  # Neutral gray at zero
+        (235, 164, 120),    # Pale red
+        (188, 84, 68),
+        (107, 22, 38)       # Medium red
+    ]
+    # Normalize to [0, 1]
+    colors_list = np.array(colors_list) / 255.0
+
+    # Average the two lists
+    colors_list_2 = (np.array(colors_list_1) + colors_list) / 2.0
+
+    # Create the colormap
+    cmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', colors_list_2)
+    return cmap
 
 class SpectrumPlotter:
 	def __init__(self, sconfig: SpectrumConfig, cconfig: CrossConfig, scalc: SpectrumCalculator,  pconfig: PlotConfig):
@@ -170,35 +203,173 @@ class SpectrumPlotter:
 	    print("\nS2 Scaling Information:")
 	    print(tabulate(s2_table, headers='keys', tablefmt='pretty', showindex=False))
 
+	def display_s4(self):
+	    """
+	    Function to handle plotting for order 4.
+	    Displays real and/or imaginary parts based on plot_format,
+	    optionally with arcsinh scaling if configured.
+	    Plots a 2D color map (pcolormesh) for each dataset.
+	    """
+
+	    def plot_data(ax, X, Y, Z, title, freq_label, cmap):
+	        """
+	        Helper to plot the 2D data (Z) on ax with pcolormesh.
+	        X and Y are meshgrids of the frequency axis.
+	        """
+	        # Symmetric limits around zero
+	        data_max = Z.max()
+	        data_min = Z.min()
+	        limit = max(abs(data_max), abs(data_min))
+
+	        # pcolormesh ensures zero is centered if we set vmin=-limit, vmax=limit
+	        cmesh = ax.pcolormesh(
+	            X, Y, Z,
+	            cmap=cmap, shading='auto',
+	            vmin=-limit, vmax=limit
+	        )
+	        ax.set_title(title)
+	        ax.set_xlabel(freq_label)
+	        ax.set_ylabel(freq_label)
+	        return cmesh
+
+	    def configure_axes_s4(fig, ax, cmesh):
+	        """
+	        Helper to configure axes (labels, colorbars, etc.) for s4 plots.
+	        """
+	        # Attach a colorbar specific to this Axes
+	        fig.colorbar(cmesh, ax=ax)
+
+	    # -------------------------------------------------------
+	    # Start of display_s4 main logic
+	    # -------------------------------------------------------
+	    cmap = custom_colormap()
+
+	    datasets = []
+	    for source, selected_keys in [("selected", self.scalc.selected)]:
+	        for keys in selected_keys:
+	            s_data, s_err_data, freq_data = self.import_spec_data(4, keys)
+	            if s_data is not None and freq_data is not None and s_err_data is not None:
+	                datasets.append((keys, source, s_data, s_err_data, freq_data))
+	            elif s_data is not None and freq_data is not None:
+	                # In case error data is None or not needed
+	                datasets.append((keys, source, s_data, None, freq_data))
+
+	    # If no datasets found, just exit
+	    if not datasets:
+	        print("No order 4 data available.")
+	        return
+
+	    # Tracking whether we've applied arcsinh scaling and what factor
+	    scaled = False
+	    scale_factor = None
+
+	    num_datasets = len(datasets)
+	    num_columns = len(self.pconfig.plot_format)
+
+	    fig, axes = plt.subplots(
+	        num_datasets, num_columns,
+	        figsize=(8 * num_columns, 5 * num_datasets),
+	        squeeze=False
+	    )
+
+	    # Loop over each dataset (row in the subplot)
+	    for (keys, source, s_data, s_err_data, freq_data), ax_row in zip(datasets, axes):
+	        # If arcsinh scaling is enabled, apply it exactly as in display_s2
+	        if self.pconfig.arcsinh_scale[0]:
+	            if scale_factor is None:
+	                # We do a quick check for max magnitude to define a scale if desired
+	                s_max = np.max(np.abs(s_data))
+	                scale_factor = self.pconfig.arcsinh_scale[1]
+	                scaled = True
+	            # Apply arcsinh scaling
+	            s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+
+	        # Create meshgrids for the 2D frequency axes
+	        # freq_data is presumably 1D, so we create 2D from it:
+	        X, Y = np.meshgrid(freq_data, freq_data)
+
+	        # For each plot_format column (real or imaginary)
+	        for col, ax in enumerate(ax_row):
+	            component = self.pconfig.plot_format[col]
+	            if component == 're':
+	                Z = np.real(s_data)
+	                comp_label = "Real"
+	            elif component == 'im':
+	                Z = np.imag(s_data)
+	                comp_label = "Imag"
+	            else:
+	                # Default to real if unknown format
+	                Z = np.real(s_data)
+	                comp_label = "Real"
+
+	            plot_title = f"{source}: Order 4 {comp_label} - Dataset {keys}"
+
+	            # Plot
+	            cmesh = plot_data(
+	                ax=ax,
+	                X=X,
+	                Y=Y,
+	                Z=Z,
+	                title=plot_title,
+	                freq_label="Frequency",
+	                cmap=cmap
+	            )
+
+	            # Configure axis
+	            configure_axes_s4(fig, ax, cmesh)
+
+	    plt.tight_layout()
+	    plt.show()
+
+	    # Display the scaling information in a table
+	    s4_table_data = [{
+	        'Arcsinh Scaled': scaled,
+	        'Scale Factor': scale_factor if scaled else "N/A"
+	    }]
+	    s4_table = pd.DataFrame(s4_table_data)
+	    print("\nS4 Scaling Information:")
+	    print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+
 	def display(self):
 	    all_results = []
 	    datasets = []
 	    generate_s2_plots = False
+	    generate_s4_plots = False
 
-	    # Process datasets from both selected and cross2_selected
-	    for source, selected_keys, valid_orders in [
-	        ("selected", self.scalc.selected, [1, 2]),
-	        ("cross2_selected", self.scalc.cross2_selected, [2]),
+	    # For the 'selected' datasets, only process orders that are in display_orders.
+	    for source, selected_keys in [
+	        ("selected", self.scalc.selected),
+	        ("cross2_selected", self.scalc.cross2_selected)
 	    ]:
 	        for keys in selected_keys:
-	            for order in valid_orders:
+	            # For cross2_selected, we assume only order 2 is valid.
+	            if source == "cross2_selected":
+	                orders_to_process = [order for order in self.pconfig.display_orders if order == 2]
+	            else:
+	                orders_to_process = self.pconfig.display_orders
+
+	            for order in orders_to_process:
 	                if order == 1:
 	                    results = self.display_s1(order, keys, source)
 	                    all_results.extend(results)
 	                elif order == 2:
 	                    datasets.append((keys, source))
 	                    generate_s2_plots = True
+	                elif order == 4:
+	                    generate_s4_plots = True
 
-	    # Display the S1 results as a table
+	    # Display the S1 results as a table.
 	    df = pd.DataFrame(all_results)
 	    if not df.empty:
 	        print(tabulate(df, headers='keys', tablefmt='pretty', showindex=False))
 	    else:
 	        print("No results available for order 1.")
 
-	    # Then handle the S2 plots
+	    # Then handle the S2 and S4 plots.
 	    if generate_s2_plots:
 	        self.display_s2(order=2, datasets=datasets)
+	    if generate_s4_plots:
+	        self.display_s4()
 
 
 

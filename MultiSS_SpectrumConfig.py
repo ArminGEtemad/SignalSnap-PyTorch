@@ -2,7 +2,7 @@ import numpy as np
 import h5py
 
 class SpectrumConfig:
-    def __init__(self, dt, f_unit='Hz', f_max=None, f_min=0, f_lists=None, full_bispectrum=False,
+    def __init__(self, dt, f_unit='Hz', f_max=None, f_min=0, f_lists=None,
                  backend='mps', spectrum_size=100, order_in='all',
                  coherent=False, m=10, m_var=10, show_first_frame=True, break_after=int(1e6)):
         self.dt = dt

@@ -117,27 +117,28 @@ class SpectrumCalculator:
         self.n_chunks = {i: 0 for i in self.selected}
         self.n_chunks.update({(k1, k2): 0 for k1, k2 in self.cross2_selected})
 
-        self.m = {1: None, 2: None}
-        self.m_var = {1: None, 2: None}
+        self.m = {1: None, 2: None, 4: None}
+        self.m_var = {1: None, 2: None, 4: None}
 
         # For frequency, spectra, error, etc.
         keys = self.selected + self.cross2_selected
-        self.freq = {key: {2: None} for key in keys}
+        self.freq = {key: {2: None, 4: None} for key in keys}
         self.f_lists = {key: {2: None, 3: None, 4: None} for key in keys}
-        self.s = {key: {1: None, 2: None} for key in self.selected}
-        self.s.update({key: {2: None} for key in self.cross2_selected})
-        self.s_gpu = {key: {1: None, 2: None} for key in self.selected}
-        self.s_gpu.update({key: {2: None} for key in self.cross2_selected})
-        self.s_err = {key: {1: None, 2: None} for key in self.selected}
-        self.s_err.update({key: {2: None} for key in self.cross2_selected})
-        self.s_err_gpu = {key: {1: None, 2: None} for key in self.selected}
-        self.s_err_gpu.update({key: {2: None} for key in self.cross2_selected})
-        self.s_errs = {key: {1: None, 2: []} for key in self.selected}
-        self.s_errs.update({key: {2: []} for key in self.cross2_selected})
-        self.err_counter = {key: {1: 0, 2: 0} for key in self.selected}
-        self.err_counter.update({key: {2: 0} for key in self.cross2_selected})
-        self.n_error_estimates = {key: {1: 0, 2: 0} for key in self.selected}
-        self.n_error_estimates.update({key: {2: 0} for key in self.cross2_selected})
+
+        self.s = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s.update({key: {2: None, 4: None} for key in self.cross2_selected})
+        self.s_gpu = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_gpu.update({key: {2: None, 4: None} for key in self.cross2_selected})
+        self.s_err = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_err.update({key: {2: None, 4: None} for key in self.cross2_selected})
+        self.s_err_gpu = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_err_gpu.update({key: {2: None, 4: None} for key in self.cross2_selected})
+        self.s_errs = {key: {1: None, 2: [], 4: []} for key in self.selected}
+        self.s_errs.update({key: {2: [], 4: []} for key in self.cross2_selected})
+        self.err_counter = {key: {1: 0, 2: 0, 4: 0} for key in self.selected}
+        self.err_counter.update({key: {2: 0, 4: 0} for key in self.cross2_selected})
+        self.n_error_estimates = {key: {1: 0, 2: 0, 4: 0} for key in self.selected}
+        self.n_error_estimates.update({key: {2: 0, 4: 0} for key in self.cross2_selected})
 
     def validate_shapes(self):
         expected_shape = self.diconfig_list[self.selected[0]].data.shape[0]
@@ -187,13 +188,92 @@ class SpectrumCalculator:
     def c2(self, a_w1, a_w2):
         a_w2_star = torch.conj(a_w2)
         term_1 = torch.mean(a_w1 * a_w2_star, dim=0)
-        if self.sconfig.coherent:
-            s2 = term_1
-        else:
-            factor = self.sconfig.m / (self.sconfig.m - 1)
-            term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
-            s2 = factor * (term_1 - term_2)
+        factor = self.sconfig.m / (self.sconfig.m - 1)
+        term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
+        s2 = factor * (term_1 - term_2)
         return s2.squeeze(-1)
+
+
+    """
+    def c4(self, a_w1, a_w2):
+
+        m = self.sconfig.m
+
+        x = a_w1
+        z = a_w2
+
+        y = torch.conj(x)
+        w = torch.conj(z)
+
+        x_mean = x - torch.mean(x, dim=0, keepdim=True)#.repeat(1, 1, x.shape[2]) # is repeat necessary or not?
+        y_mean = y - torch.mean(x, dim=0, keepdim=True)#.repeat(1, 1, y.shape[2])
+        z_mean = z - torch.mean(x, dim=0, keepdim=True)#.repeat(1, 1, z.shape[2])
+        w_mean = w - torch.mean(x, dim=0, keepdim=True)#.repeat(1, 1, w.shape[2])
+
+        xyzw = torch.matmul(x_mean * y_mean, (z_mean * w_mean).transpose(-1, -2) )
+        xyzw_mean = torch.mean(xyzw, dim=0)
+
+        xy_mean = torch.mean(x_mean * y_mean, dim=0)
+        zw_mean = torch.mean(z_mean * w_mean, dim=0)
+        xy_zw_mean = torch.matmul(xy_mean, zw_mean.transpose(-1, -2) )
+
+        xz_mean = torch.mean(torch.matmul(x_mean, z_mean.transpose(-1, -2) ), dim=0)
+        yw_mean = torch.mean(torch.matmul(y_mean, w_mean.transpose(-1, -2) ), dim=0)
+        xz_yw_mean = xz_mean * yw_mean
+
+        xw_mean = torch.mean(torch.matmul(x_mean, w_mean.transpose(-1, -2) ), dim=0)
+        yz_mean = torch.mean(torch.matmul(y_mean, z_mean.transpose(-1, -2) ), dim=0)
+        xw_yz_mean = xw_mean * yz_mean
+
+
+        s4 = m ** 2 / ((m - 1) * (m - 2) * (m - 3)) * (
+                (m + 1) * xyzw_mean -
+                (m - 1) * (
+                        xy_zw_mean + xz_yw_mean + xw_yz_mean
+                )
+        )
+
+        return s4
+    """
+    def c4(self, a_w1, a_w2, a_w3, a_w4):
+
+        m = self.sconfig.m
+
+        x = a_w1
+        y = torch.conj(a_w2)
+        z = a_w3
+        w = torch.conj(a_w4)
+
+
+        x_mean = x - x.mean(dim=0, keepdim=True)
+        y_mean = y - y.mean(dim=0, keepdim=True)
+        z_mean = z - z.mean(dim=0, keepdim=True)
+        w_mean = w - w.mean(dim=0, keepdim=True)
+
+        # Equivalent to af.matmulNT(x_mean * y_mean, z_mean * w_mean)
+        xyzw = torch.matmul((x_mean * y_mean), (z_mean * w_mean).transpose(-1, -2))
+        xyzw_mean = xyzw.mean(dim=0)
+
+        # Compute all the partial means
+        xy_mean = (x_mean * y_mean).mean(dim=0)
+        zw_mean = (z_mean * w_mean).mean(dim=0)
+        xy_zw_mean = torch.matmul(xy_mean, zw_mean.transpose(-1, -2))
+
+        xz_mean = torch.matmul(x_mean, z_mean.transpose(-1, -2)).mean(dim=0)
+        yw_mean = torch.matmul(y_mean, w_mean.transpose(-1, -2)).mean(dim=0)
+        xz_yw_mean = xz_mean * yw_mean
+
+        xw_mean = torch.matmul(x_mean, w_mean.transpose(-1, -2)).mean(dim=0)
+        yz_mean = torch.matmul(y_mean, z_mean.transpose(-1, -2)).mean(dim=0)
+        xw_yz_mean = xw_mean * yz_mean
+
+        # Final combination
+
+        s4 = m**2 / ((m - 1)*(m - 2)*(m - 3)) * (
+                (m + 1)*xyzw_mean - (m - 1)*(xy_zw_mean + xz_yw_mean + xw_yz_mean)
+            )
+
+        return s4
 
     # ----------------------------------------
 
@@ -207,6 +287,8 @@ class SpectrumCalculator:
             self.s_errs[dataset_idx][order][0, self.err_counter[dataset_idx][order]] = single_spectrum
         elif order == 2:
             self.s_errs[dataset_idx][order][:, self.err_counter[dataset_idx][order]] = single_spectrum
+        else:
+            self.s_errs[dataset_idx][order][:, :, self.err_counter[dataset_idx][order]] = single_spectrum
 
         self.err_counter[dataset_idx][order] += 1
 
@@ -240,7 +322,13 @@ class SpectrumCalculator:
             elif order == 2:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :] if self.sconfig.f_lists is None else coeffs_gpu
                 single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt * (single_window ** 2).sum())
+
+            elif order == 4:
+                a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
+                single_spectrum = self.c4(a_w, a_w, a_w, a_w) / (self.sconfig.dt * (single_window ** 4).sum())
+
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
+
 
     def fourier_coeffs_to_cross_spectra(self, orders, coeffs_gpu_dict, f_min_idx, f_max_idx, single_window, key1, key2):
         for order in orders:
@@ -252,6 +340,7 @@ class SpectrumCalculator:
                     a_w1 = coeffs_gpu_dict[key1]
                     a_w2 = coeffs_gpu_dict[key2]
                 single_spectrum = self.c2(a_w1, a_w2) / (self.sconfig.dt * (single_window ** 2).sum())
+
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order, (key1, key2))
 
     def array_prep(self, orders, f_all_in, dataset_idx):
@@ -267,14 +356,19 @@ class SpectrumCalculator:
                                                               device=self.sconfig.backend,
                                                               dtype=torch.complex64)
 
+            elif order == 4:
+                self.s_errs[dataset_idx][order] = torch.ones((f_max_idx, f_max_idx, self.sconfig.m_var), # double check later
+                                                              device=self.sconfig.backend,
+                                                              dtype=torch.complex64)
+
     def process_order(self):
-        return [1, 2] if self.sconfig.order_in == 'all' else self.sconfig.order_in
+        return [1, 2, 4] if self.sconfig.order_in == 'all' else self.sconfig.order_in
 
     def reset_variables(self, orders, f_lists=None):
-        self.err_counter = {i: {1: 0, 2: 0} for i in self.selected}
-        self.err_counter.update({j: {2: 0} for j in self.cross2_selected})
-        self.n_error_estimates = {i: {1: 0, 2: 0} for i in self.selected}
-        self.n_error_estimates.update({j: {2: 0} for j in self.cross2_selected})
+        self.err_counter = {i: {1: 0, 2: 0, 4: 0} for i in self.selected}
+        self.err_counter.update({j: {2: 0, 4: 0} for j in self.cross2_selected})
+        self.n_error_estimates = {i: {1: 0, 2: 0, 4: 0} for i in self.selected}
+        self.n_error_estimates.update({j: {2: 0, 4: 0} for j in self.cross2_selected})
         for dataset_idx in self.selected:
             for order in orders:
                 self.f_lists[dataset_idx][order] = f_lists
@@ -373,8 +467,6 @@ class SpectrumCalculator:
         orders = self.reset()
         cross_orders = [2]
         m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = self.setup_calc_spec(orders)
-        batch_size = 16
-        n_batch = n_windows // batch_size + (1 if n_windows % batch_size else 0)
 
         for order in orders:
             self.m[order] = m
