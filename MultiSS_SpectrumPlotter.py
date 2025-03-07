@@ -209,6 +209,8 @@ class SpectrumPlotter:
 	    Displays real and/or imaginary parts based on plot_format,
 	    optionally with arcsinh scaling if configured.
 	    Plots a 2D color map (pcolormesh) for each dataset.
+	    This function plots both normal (selected) order 4 spectra and,
+	    additionally, cross correlations (from cross2_selected) for order 4.
 	    """
 
 	    def plot_data(ax, X, Y, Z, title, freq_label, cmap):
@@ -220,7 +222,6 @@ class SpectrumPlotter:
 	        data_max = Z.max()
 	        data_min = Z.min()
 	        limit = max(abs(data_max), abs(data_min))
-
 	        # pcolormesh ensures zero is centered if we set vmin=-limit, vmax=limit
 	        cmesh = ax.pcolormesh(
 	            X, Y, Z,
@@ -239,96 +240,136 @@ class SpectrumPlotter:
 	        # Attach a colorbar specific to this Axes
 	        fig.colorbar(cmesh, ax=ax)
 
-	    # -------------------------------------------------------
-	    # Start of display_s4 main logic
-	    # -------------------------------------------------------
 	    cmap = custom_colormap()
 
-	    datasets = []
+	    # ---------------------------------------------------------------------
+	    # 1. Plot normal (selected) order 4 spectra
+	    # ---------------------------------------------------------------------
+	    datasets_normal = []
 	    for source, selected_keys in [("selected", self.scalc.selected)]:
 	        for keys in selected_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(4, keys)
-	            if s_data is not None and freq_data is not None and s_err_data is not None:
-	                datasets.append((keys, source, s_data, s_err_data, freq_data))
-	            elif s_data is not None and freq_data is not None:
-	                # In case error data is None or not needed
-	                datasets.append((keys, source, s_data, None, freq_data))
+	            if s_data is not None and freq_data is not None:
+	                datasets_normal.append((keys, source, s_data, s_err_data, freq_data))
 
-	    # If no datasets found, just exit
-	    if not datasets:
-	        print("No order 4 data available.")
-	        return
+	    if datasets_normal:
+	        scaled = False
+	        scale_factor = None
+	        num_datasets = len(datasets_normal)
+	        num_columns = len(self.pconfig.plot_format)
+	        fig, axes = plt.subplots(
+	            num_datasets, num_columns,
+	            figsize=(8 * num_columns, 5 * num_datasets),
+	            squeeze=False
+	        )
+	        for (keys, source, s_data, s_err_data, freq_data), ax_row in zip(datasets_normal, axes):
+	            # Apply arcsinh scaling if enabled
+	            if self.pconfig.arcsinh_scale[0]:
+	                if scale_factor is None:
+	                    s_max = np.max(np.abs(s_data))
+	                    scale_factor = self.pconfig.arcsinh_scale[1]
+	                    scaled = True
+	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+	            # Create a 2D grid from 1D frequency data
+	            X, Y = np.meshgrid(freq_data, freq_data)
+	            for col, ax in enumerate(ax_row):
+	                component = self.pconfig.plot_format[col]
+	                if component == 're':
+	                    Z = np.real(s_data)
+	                    comp_label = "Real"
+	                elif component == 'im':
+	                    Z = np.imag(s_data)
+	                    comp_label = "Imag"
+	                else:
+	                    Z = np.real(s_data)
+	                    comp_label = "Real"
+	                plot_title = f"{source}: Order 4 {comp_label} - Dataset {keys}"
+	                cmesh = plot_data(
+	                    ax=ax,
+	                    X=X,
+	                    Y=Y,
+	                    Z=Z,
+	                    title=plot_title,
+	                    freq_label="Frequency",
+	                    cmap=cmap
+	                )
+	                configure_axes_s4(fig, ax, cmesh)
+	        plt.tight_layout()
+	        plt.show()
 
-	    # Tracking whether we've applied arcsinh scaling and what factor
-	    scaled = False
-	    scale_factor = None
+	        s4_table_data = [{
+	            'Arcsinh Scaled': scaled,
+	            'Scale Factor': scale_factor if scaled else "N/A"
+	        }]
+	        s4_table = pd.DataFrame(s4_table_data)
+	        print("\nS4 Scaling Information (Normal):")
+	        print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+	    else:
+	        print("No normal order 4 data available.")
 
-	    num_datasets = len(datasets)
-	    num_columns = len(self.pconfig.plot_format)
+	    # ---------------------------------------------------------------------
+	    # 2. Plot cross correlation order 4 spectra
+	    # ---------------------------------------------------------------------
+	    datasets_cross = []
+	    for source, cross_keys in [("cross", self.scalc.cross4_selected)]:
+	        for keys in cross_keys:
+	            s_data, s_err_data, freq_data = self.import_spec_data(4, keys)
+	            if s_data is not None and freq_data is not None:
+	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 
-	    fig, axes = plt.subplots(
-	        num_datasets, num_columns,
-	        figsize=(8 * num_columns, 5 * num_datasets),
-	        squeeze=False
-	    )
+	    if datasets_cross:
+	        scaled = False
+	        scale_factor = None
+	        num_datasets = len(datasets_cross)
+	        num_columns = len(self.pconfig.plot_format)
+	        fig, axes = plt.subplots(
+	            num_datasets, num_columns,
+	            figsize=(8 * num_columns, 5 * num_datasets),
+	            squeeze=False
+	        )
+	        for (keys, source, s_data, s_err_data, freq_data), ax_row in zip(datasets_cross, axes):
+	            # Apply arcsinh scaling if enabled
+	            if self.pconfig.arcsinh_scale[0]:
+	                if scale_factor is None:
+	                    s_max = np.max(np.abs(s_data))
+	                    scale_factor = self.pconfig.arcsinh_scale[1]
+	                    scaled = True
+	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+	            X, Y = np.meshgrid(freq_data, freq_data)
+	            for col, ax in enumerate(ax_row):
+	                component = self.pconfig.plot_format[col]
+	                if component == 're':
+	                    Z = np.real(s_data)
+	                    comp_label = "Real"
+	                elif component == 'im':
+	                    Z = np.imag(s_data)
+	                    comp_label = "Imag"
+	                else:
+	                    Z = np.real(s_data)
+	                    comp_label = "Real"
+	                plot_title = f"{source}: Order 4 {comp_label} - Datasets {keys}"
+	                cmesh = plot_data(
+	                    ax=ax,
+	                    X=Y,
+	                    Y=X,
+	                    Z=Z,
+	                    title=plot_title,
+	                    freq_label="Frequency",
+	                    cmap=cmap
+	                )
+	                configure_axes_s4(fig, ax, cmesh)
+	        plt.tight_layout()
+	        plt.show()
 
-	    # Loop over each dataset (row in the subplot)
-	    for (keys, source, s_data, s_err_data, freq_data), ax_row in zip(datasets, axes):
-	        # If arcsinh scaling is enabled, apply it exactly as in display_s2
-	        if self.pconfig.arcsinh_scale[0]:
-	            if scale_factor is None:
-	                # We do a quick check for max magnitude to define a scale if desired
-	                s_max = np.max(np.abs(s_data))
-	                scale_factor = self.pconfig.arcsinh_scale[1]
-	                scaled = True
-	            # Apply arcsinh scaling
-	            s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
-
-	        # Create meshgrids for the 2D frequency axes
-	        # freq_data is presumably 1D, so we create 2D from it:
-	        X, Y = np.meshgrid(freq_data, freq_data)
-
-	        # For each plot_format column (real or imaginary)
-	        for col, ax in enumerate(ax_row):
-	            component = self.pconfig.plot_format[col]
-	            if component == 're':
-	                Z = np.real(s_data)
-	                comp_label = "Real"
-	            elif component == 'im':
-	                Z = np.imag(s_data)
-	                comp_label = "Imag"
-	            else:
-	                # Default to real if unknown format
-	                Z = np.real(s_data)
-	                comp_label = "Real"
-
-	            plot_title = f"{source}: Order 4 {comp_label} - Dataset {keys}"
-
-	            # Plot
-	            cmesh = plot_data(
-	                ax=ax,
-	                X=X,
-	                Y=Y,
-	                Z=Z,
-	                title=plot_title,
-	                freq_label="Frequency",
-	                cmap=cmap
-	            )
-
-	            # Configure axis
-	            configure_axes_s4(fig, ax, cmesh)
-
-	    plt.tight_layout()
-	    plt.show()
-
-	    # Display the scaling information in a table
-	    s4_table_data = [{
-	        'Arcsinh Scaled': scaled,
-	        'Scale Factor': scale_factor if scaled else "N/A"
-	    }]
-	    s4_table = pd.DataFrame(s4_table_data)
-	    print("\nS4 Scaling Information:")
-	    print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+	        s4_table_data = [{
+	            'Arcsinh Scaled': scaled,
+	            'Scale Factor': scale_factor if scaled else "N/A"
+	        }]
+	        s4_table = pd.DataFrame(s4_table_data)
+	        print("\nS4 Scaling Information (Cross):")
+	        print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+	    else:
+	        print("No cross order 4 data available.")
 
 	def display(self):
 	    all_results = []
