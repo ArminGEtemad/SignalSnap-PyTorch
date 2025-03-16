@@ -350,8 +350,8 @@ class SpectrumPlotter:
 	                plot_title = f"{source}: Order 4 {comp_label} - Datasets {keys}"
 	                cmesh = plot_data(
 	                    ax=ax,
-	                    X=Y,
-	                    Y=X,
+	                    X=Y, # not a typo this is the correct way
+	                    Y=X, # not a typo this is the correct way
 	                    Z=Z,
 	                    title=plot_title,
 	                    freq_label="Frequency",

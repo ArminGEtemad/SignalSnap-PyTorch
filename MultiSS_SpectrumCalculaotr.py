@@ -123,39 +123,39 @@ class SpectrumCalculator:
         self.n_chunks.update({(k1, k2): 0 for k1, k2 in self.cross2_selected})
         self.n_chunks.update({(k1, k2, k3, k4): 0 for k1, k2, k3, k4 in self.cross4_selected})
 
-        self.m = {1: None, 2: None, 4: None}
-        self.m_var = {1: None, 2: None, 4: None}
+        self.m = {1: None, 2: None, 3: None, 4: None}
+        self.m_var = {1: None, 2: None, 3: None, 4: None}
 
         # For frequency, spectra, error, etc.
         keys = self.selected + self.cross2_selected + self.cross4_selected
-        self.freq = {key: {2: None, 4: None} for key in keys}
+        self.freq = {key: {2: None, 3: None, 4: None} for key in keys}
         self.f_lists = {key: {2: None, 3: None, 4: None} for key in keys}
 
-        self.s = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s.update({key: {2: None} for key in self.cross2_selected})
         self.s.update({key: {4: None} for key in self.cross4_selected})
 
-        self.s_gpu = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_gpu = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_gpu.update({key: {2: None} for key in self.cross2_selected})
         self.s_gpu.update({key: {4: None} for key in self.cross4_selected})
 
-        self.s_err = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_err = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_err.update({key: {2: None} for key in self.cross2_selected})
         self.s_err.update({key: {4: None} for key in self.cross4_selected})
 
-        self.s_err_gpu = {key: {1: None, 2: None, 4: None} for key in self.selected}
+        self.s_err_gpu = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_err_gpu.update({key: {2: None} for key in self.cross2_selected})
         self.s_err_gpu.update({key: {4: None} for key in self.cross4_selected})
 
-        self.s_errs = {key: {1: None, 2: [], 4: []} for key in self.selected}
+        self.s_errs = {key: {1: None, 2: [], 3: [], 4: []} for key in self.selected}
         self.s_errs.update({key: {2: []} for key in self.cross2_selected})
         self.s_errs.update({key: {4: []} for key in self.cross4_selected})
 
-        self.err_counter = {key: {1: 0, 2: 0, 4: 0} for key in self.selected}
+        self.err_counter = {key: {1: 0, 2: 0, 3: 0, 4: 0} for key in self.selected}
         self.err_counter.update({key: {2: 0} for key in self.cross2_selected})
         self.err_counter.update({key: {4: 0} for key in self.cross4_selected})
 
-        self.n_error_estimates = {key: {1: 0, 2: 0, 4: 0} for key in self.selected}
+        self.n_error_estimates = {key: {1: 0, 2: 0, 3: 0, 4: 0} for key in self.selected}
         self.n_error_estimates.update({key: {2: 0} for key in self.cross2_selected})
         self.n_error_estimates.update({key: {4: 0} for key in self.cross4_selected})
 
@@ -211,6 +211,70 @@ class SpectrumCalculator:
         term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
         s2 = factor * (term_1 - term_2)
         return s2.squeeze(-1)
+
+    def a_w3_gen(self, f_max_idx, m):
+        a_w3 = np.ones((f_max_idx // 2, f_max_idx // 2, m), dtype=complex) * 1j
+        return a_w3
+    def index_generation_to_aw_3(self, f_max_idx):
+        indices = np.arange(f_max_idx // 2)[:, None] + np.arange(f_max_idx // 2)
+        print(f'The shape of indices : {indices.shape}')
+        print(f'indices: {indices}')
+        return indices
+
+    def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices, backend):
+        if backend == 'cpu':
+            #a_w3[np.arange(f_max_idx // 2), :, :] = a_w_all[indices, 0, :m]
+            print(f'a_w3 shape is : {a_w3.shape}')
+            print(f'a_w_all shape is : {a_w_all.shape}')
+            a_w3[:, np.arange(f_max_idx // 2), :] = a_w_all[indices, 0, :m]
+            print(f'a_w3 shape after is : {a_w3.shape}')
+
+            a_w3 = a_w3.conj()
+
+
+        elif backend in ['cuda', 'mps']:
+            device = torch.device(backend)
+            a_w_all = torch.from_numpy(a_w_all).to(device)
+            a_w3 = torch.from_numpy(a_w3).to(device)
+            indices = torch.from_numpy(indices).to(device)
+            a_w3[torch.arange(f_max_idx // 2), :, :] = a_w_all[indices, 0, :m]
+            a_w3 = a_w3.conj()
+            a_w3 = a_w3.cpu().numpy()
+        return a_w3
+    
+    def c3(self, a_w1, a_w2, a_w3):
+        m = self.sconfig.m
+
+        print(f'a_w1 shape is {a_w1.shape}')
+        a_w1_modified = a_w1.transpose(-1, -2)
+        print(f'a_w1_modified shape is {a_w1_modified.shape}')
+        a_w1_modified_stacked = a_w1_modified.tile((1, a_w2.shape[1], 1))
+        print(f'a_w1_modified_stacked shape is {a_w1_modified_stacked.shape}')
+
+
+        print(f'a_w2 shape is {a_w2.shape}')
+        a_w2_modified_stacked = a_w2.tile((1, 1, a_w1.shape[1]))
+        print(f'a_w2_modified_stacked shape is {a_w2_modified_stacked.shape}')
+
+
+        print(f'a_w3 shape is {a_w3.shape}')
+        a_w3_modified = a_w3.permute(2, 0, 1)
+        print(f'a_w3_modified shape is {a_w3_modified.shape}')
+
+        d_12 = a_w1_modified_stacked * a_w2_modified_stacked
+        d_13 = a_w1_modified_stacked * a_w3_modified
+        d_23 = a_w2_modified_stacked * a_w3_modified
+        d_123 = d_12 * a_w3_modified
+
+        d_means = [torch.mean(d, dim=0) for d in [a_w1_modified_stacked, a_w2_modified_stacked, a_w3_modified, d_12, d_13, d_23, d_123]]
+        d_1_mean, d_2_mean, d_3_mean, d_12_mean, d_13_mean, d_23_mean, d_123_mean = d_means
+        s3 = m ** 2 / ((m - 1) * (m - 2)) * (d_123_mean - d_12_mean * d_3_mean -
+                                                     d_13_mean * d_2_mean - d_23_mean * d_1_mean +
+                                                     2 * d_1_mean * d_2_mean * d_3_mean)
+
+        print('yay!')
+
+        return s3
 
     def c4(self, a_w1, a_w2, a_w3, a_w4):
         m = self.sconfig.m
@@ -293,6 +357,19 @@ class SpectrumCalculator:
             elif order == 2:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
                 single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt * (single_window ** 2).sum())
+            elif order == 3:
+                a_w = coeffs_gpu[:, f_min_idx:f_max_idx//2, :]
+                a_w2 = a_w
+                coeffs_cpu = coeffs_gpu.cpu().numpy()
+                #print(f'coeffs_cpu shape is {coeffs_cpu.shape}')
+
+                coeffs_cpu = np.transpose(coeffs_cpu, (1, 2, 0))  
+                ##coeffs_gpu = coeffs_gpu.permute(2, 0, 1)
+                t1 = self.calc_a_w3(coeffs_cpu, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi, self.sconfig.backend)
+                a_w3 = torch.from_numpy(t1).to(self.sconfig.backend)
+                print(f'a_w3 shape after calc_a_w3--> {a_w3.shape}')
+                single_spectrum = self.c3(a_w, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
+
             elif order == 4:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
                 single_spectrum = self.c4(a_w, a_w, a_w, a_w) / (self.sconfig.dt * (single_window ** 4).sum())
@@ -333,6 +410,11 @@ class SpectrumCalculator:
                 self.s_errs[dataset_idx][order] = torch.ones((f_max_idx, self.sconfig.m_var), 
                                                              device=self.sconfig.backend,
                                                              dtype=torch.complex64)
+            elif order == 3:
+                # for cross/cross4 we can have 2D freq
+                self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, f_max_idx//2, self.sconfig.m_var),
+                                                             device=self.sconfig.backend,
+                                                             dtype=torch.complex64)
             elif order == 4:
                 # for cross/cross4 we can have 2D freq
                 self.s_errs[dataset_idx][order] = torch.ones((f_max_idx, f_max_idx, self.sconfig.m_var),
@@ -340,11 +422,11 @@ class SpectrumCalculator:
                                                              dtype=torch.complex64)
 
     def process_order(self):
-        return [1, 2, 4] if self.sconfig.order_in == 'all' else self.sconfig.order_in
+        return [1, 2, 3, 4] if self.sconfig.order_in == 'all' else self.sconfig.order_in
 
     def reset_variables(self, orders, f_lists=None):
-        self.err_counter = {i: {1: 0, 2: 0, 4: 0} for i in self.selected}
-        self.n_error_estimates = {i: {1: 0, 2: 0, 4: 0} for i in self.selected}
+        self.err_counter = {i: {1: 0, 2: 0, 3: 0, 4: 0} for i in self.selected}
+        self.n_error_estimates = {i: {1: 0, 2: 0, 3: 0, 4: 0} for i in self.selected}
 
         self.err_counter.update({j: {2: 0} for j in self.cross2_selected})
         self.n_error_estimates.update({j: {2: 0} for j in self.cross2_selected})
@@ -465,6 +547,12 @@ class SpectrumCalculator:
 
         for order in orders:
             self.m[order] = m
+
+        self.a_w3_init = self.a_w3_gen(f_max_idx, self.sconfig.m)
+        self.indi = self.index_generation_to_aw_3(f_max_idx)
+        print(self.a_w3_init.shape)
+        print(self.indi.shape)
+
 
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten().reshape((m, window_points, 1))
