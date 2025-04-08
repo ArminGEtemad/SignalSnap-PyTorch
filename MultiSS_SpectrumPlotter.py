@@ -203,14 +203,14 @@ class SpectrumPlotter:
 	    print("\nS2 Scaling Information:")
 	    print(tabulate(s2_table, headers='keys', tablefmt='pretty', showindex=False))
 
-	def display_s4(self):
+	def display_sN(self, order):
 	    """
-	    Function to handle plotting for order 4.
+	    Function to handle plotting for a given 'order' (e.g., 3 or 4).
 	    Displays real and/or imaginary parts based on plot_format,
 	    optionally with arcsinh scaling if configured.
 	    Plots a 2D color map (pcolormesh) for each dataset.
-	    This function plots both normal (selected) order 4 spectra and,
-	    additionally, cross correlations (from cross2_selected) for order 4.
+	    This function plots both normal (selected) order-N spectra and,
+	    additionally, cross correlations for order N.
 	    """
 
 	    def plot_data(ax, X, Y, Z, title, freq_label, cmap):
@@ -225,7 +225,7 @@ class SpectrumPlotter:
 	        # pcolormesh ensures zero is centered if we set vmin=-limit, vmax=limit
 	        cmesh = ax.pcolormesh(
 	            X, Y, Z,
-	            cmap=cmap, shading='auto',
+	            cmap=cmap,
 	            vmin=-limit, vmax=limit
 	        )
 	        ax.set_title(title)
@@ -233,22 +233,26 @@ class SpectrumPlotter:
 	        ax.set_ylabel(freq_label)
 	        return cmesh
 
-	    def configure_axes_s4(fig, ax, cmesh):
+	    def configure_axes(fig, ax, cmesh):
 	        """
-	        Helper to configure axes (labels, colorbars, etc.) for s4 plots.
+	        Helper to configure axes (labels, colorbars, etc.) for sN plots.
 	        """
 	        # Attach a colorbar specific to this Axes
 	        fig.colorbar(cmesh, ax=ax)
 
 	    cmap = custom_colormap()
 
-	    # ---------------------------------------------------------------------
-	    # 1. Plot normal (selected) order 4 spectra
-	    # ---------------------------------------------------------------------
+	    # -------------------------------------------------------------------------
+	    # 1. Plot normal (selected) order-N spectra
+	    # -------------------------------------------------------------------------
 	    datasets_normal = []
 	    for source, selected_keys in [("selected", self.scalc.selected)]:
 	        for keys in selected_keys:
-	            s_data, s_err_data, freq_data = self.import_spec_data(4, keys)
+	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
+	            if order == 3 and freq_data is not None:
+		            half_size = freq_data.size // 2
+		            freq_data = freq_data[:half_size]
+		            
 	            if s_data is not None and freq_data is not None:
 	                datasets_normal.append((keys, source, s_data, s_err_data, freq_data))
 
@@ -270,8 +274,10 @@ class SpectrumPlotter:
 	                    scale_factor = self.pconfig.arcsinh_scale[1]
 	                    scaled = True
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+
 	            # Create a 2D grid from 1D frequency data
 	            X, Y = np.meshgrid(freq_data, freq_data)
+
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
 	                if component == 're':
@@ -281,9 +287,11 @@ class SpectrumPlotter:
 	                    Z = np.imag(s_data)
 	                    comp_label = "Imag"
 	                else:
+	                    # Default to Real part if something else is specified
 	                    Z = np.real(s_data)
 	                    comp_label = "Real"
-	                plot_title = f"{source}: Order 4 {comp_label} - Dataset {keys}"
+
+	                plot_title = f"{source}: Order {order} {comp_label} - Dataset {keys}"
 	                cmesh = plot_data(
 	                    ax=ax,
 	                    X=X,
@@ -293,27 +301,30 @@ class SpectrumPlotter:
 	                    freq_label="Frequency",
 	                    cmap=cmap
 	                )
-	                configure_axes_s4(fig, ax, cmesh)
+	                configure_axes(fig, ax, cmesh)
 	        plt.tight_layout()
 	        plt.show()
 
-	        s4_table_data = [{
+	        sN_table_data = [{
 	            'Arcsinh Scaled': scaled,
 	            'Scale Factor': scale_factor if scaled else "N/A"
 	        }]
-	        s4_table = pd.DataFrame(s4_table_data)
-	        print("\nS4 Scaling Information (Normal):")
-	        print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+	        sN_table = pd.DataFrame(sN_table_data)
+	        print(f"\nS{order} Scaling Information (Normal):")
+	        print(tabulate(sN_table, headers='keys', tablefmt='pretty', showindex=False))
 	    else:
-	        print("No normal order 4 data available.")
+	        print(f"No normal order {order} data available.")
 
-	    # ---------------------------------------------------------------------
-	    # 2. Plot cross correlation order 4 spectra
-	    # ---------------------------------------------------------------------
+	    # -------------------------------------------------------------------------
+	    # 2. Plot cross correlation order-N spectra
+	    # -------------------------------------------------------------------------
+	    # You can either do it dynamically via getattr(...)
+	    cross_list = getattr(self.scalc, f"cross{order}_selected", [])
+
 	    datasets_cross = []
-	    for source, cross_keys in [("cross", self.scalc.cross4_selected)]:
+	    for source, cross_keys in [("cross", cross_list)]:
 	        for keys in cross_keys:
-	            s_data, s_err_data, freq_data = self.import_spec_data(4, keys)
+	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
 	            if s_data is not None and freq_data is not None:
 	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 
@@ -335,7 +346,11 @@ class SpectrumPlotter:
 	                    scale_factor = self.pconfig.arcsinh_scale[1]
 	                    scaled = True
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
+
+	            # Note: your code used X=Y, Y=X for the cross correlation. 
+	            # If that’s intentional, keep it. If not, change to X, Y.
 	            X, Y = np.meshgrid(freq_data, freq_data)
+
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
 	                if component == 're':
@@ -347,34 +362,37 @@ class SpectrumPlotter:
 	                else:
 	                    Z = np.real(s_data)
 	                    comp_label = "Real"
-	                plot_title = f"{source}: Order 4 {comp_label} - Datasets {keys}"
+
+	                plot_title = f"{source}: Order {order} {comp_label} - Datasets {keys}"
+	                # If you want the swapped axes as in your snippet:
 	                cmesh = plot_data(
 	                    ax=ax,
-	                    X=Y, # not a typo this is the correct way
-	                    Y=X, # not a typo this is the correct way
+	                    X=Y,  # swapped
+	                    Y=X,  # swapped
 	                    Z=Z,
 	                    title=plot_title,
 	                    freq_label="Frequency",
 	                    cmap=cmap
 	                )
-	                configure_axes_s4(fig, ax, cmesh)
+	                configure_axes(fig, ax, cmesh)
 	        plt.tight_layout()
 	        plt.show()
 
-	        s4_table_data = [{
+	        sN_table_data = [{
 	            'Arcsinh Scaled': scaled,
 	            'Scale Factor': scale_factor if scaled else "N/A"
 	        }]
-	        s4_table = pd.DataFrame(s4_table_data)
-	        print("\nS4 Scaling Information (Cross):")
-	        print(tabulate(s4_table, headers='keys', tablefmt='pretty', showindex=False))
+	        sN_table = pd.DataFrame(sN_table_data)
+	        print(f"\nS{order} Scaling Information (Cross):")
+	        print(tabulate(sN_table, headers='keys', tablefmt='pretty', showindex=False))
 	    else:
-	        print("No cross order 4 data available.")
+	        print(f"No cross order {order} data available.")
 
 	def display(self):
 	    all_results = []
 	    datasets = []
 	    generate_s2_plots = False
+	    generate_s3_plots = False
 	    generate_s4_plots = False
 
 	    # For the 'selected' datasets, only process orders that are in display_orders.
@@ -396,6 +414,8 @@ class SpectrumPlotter:
 	                elif order == 2:
 	                    datasets.append((keys, source))
 	                    generate_s2_plots = True
+	                elif order == 3:
+	                	generate_s3_plots = True
 	                elif order == 4:
 	                    generate_s4_plots = True
 
@@ -409,8 +429,10 @@ class SpectrumPlotter:
 	    # Then handle the S2 and S4 plots.
 	    if generate_s2_plots:
 	        self.display_s2(order=2, datasets=datasets)
+	    if generate_s3_plots:
+	    	self.display_sN(order=3)
 	    if generate_s4_plots:
-	        self.display_s4()
+	        self.display_sN(order=4)
 
 
 
