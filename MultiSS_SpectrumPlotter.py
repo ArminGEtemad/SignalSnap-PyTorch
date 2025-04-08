@@ -8,6 +8,7 @@ import numpy as np
 from tabulate import tabulate
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.colors import LinearSegmentedColormap
 
 def custom_colormap():
     # Define the first list of colors (normalized to [0, 1] already)
@@ -40,6 +41,14 @@ def custom_colormap():
     # Create the colormap
     cmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', colors_list_2)
     return cmap
+
+def custom_error_colormap():
+
+    color_array = [
+        (0.0, 0.0, 0.0, 0.0),  # transparent
+        (1.0, 1.0, 1.0, 0.8),  # semi-transparent green
+    ]
+    return LinearSegmentedColormap.from_list('green_alpha', color_array)
 
 class SpectrumPlotter:
 	def __init__(self, sconfig: SpectrumConfig, cconfig: CrossConfig, scalc: SpectrumCalculator,  pconfig: PlotConfig):
@@ -241,6 +250,7 @@ class SpectrumPlotter:
 	        fig.colorbar(cmesh, ax=ax)
 
 	    cmap = custom_colormap()
+	    cmap_err  = custom_error_colormap()
 
 	    # -------------------------------------------------------------------------
 	    # 1. Plot normal (selected) order-N spectra
@@ -302,6 +312,13 @@ class SpectrumPlotter:
 	                    cmap=cmap
 	                )
 	                configure_axes(fig, ax, cmesh)
+
+	                if s_err_data is not None:
+	                    err_matrix = np.zeros_like(Z, dtype=float)
+						# Mark 1 where the error is larger than the signal
+	                    err_matrix[np.abs(Z) < s_err_data] = 1
+						# Overlay with semi-transparent green
+	                    ax.pcolormesh(X, Y, err_matrix,cmap=cmap_err,vmin=0,vmax=1,shading='auto')
 	        plt.tight_layout()
 	        plt.show()
 
@@ -376,12 +393,23 @@ class SpectrumPlotter:
 	                else:
                 		cmesh = plot_data(
                 		ax=ax,
-                		X=X,
-                		Y=Y,
+                		X=Y,
+                		Y=X,
                 		Z=Z,
                 		title=plot_title,
                 		freq_label="Frequency",
                 		cmap=cmap)
+
+                	if s_err_data is not None:
+	                    err_matrix = np.zeros_like(Z, dtype=float)
+						# Mark 1 where the error is larger than the signal
+	                    err_matrix[np.abs(Z) < s_err_data] = 1
+						# Overlay with semi-transparent green
+	                    if order ==3:
+	                    	ax.pcolormesh(X, Y, err_matrix,cmap=cmap_err,vmin=0,vmax=1,shading='auto')
+	                    else:
+	                    	ax.pcolormesh(Y, X, err_matrix,cmap=cmap_err,vmin=0,vmax=1,shading='auto')
+
 
 	                configure_axes(fig, ax, cmesh)
 	        plt.tight_layout()
