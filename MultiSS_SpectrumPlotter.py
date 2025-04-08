@@ -318,13 +318,15 @@ class SpectrumPlotter:
 	    # -------------------------------------------------------------------------
 	    # 2. Plot cross correlation order-N spectra
 	    # -------------------------------------------------------------------------
-	    # You can either do it dynamically via getattr(...)
 	    cross_list = getattr(self.scalc, f"cross{order}_selected", [])
 
 	    datasets_cross = []
 	    for source, cross_keys in [("cross", cross_list)]:
 	        for keys in cross_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
+	            if order == 3 and freq_data is not None:
+		            half_size = freq_data.size // 2
+		            freq_data = freq_data[:half_size]
 	            if s_data is not None and freq_data is not None:
 	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 
@@ -347,8 +349,6 @@ class SpectrumPlotter:
 	                    scaled = True
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
-	            # Note: your code used X=Y, Y=X for the cross correlation. 
-	            # If that’s intentional, keep it. If not, change to X, Y.
 	            X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
@@ -364,16 +364,25 @@ class SpectrumPlotter:
 	                    comp_label = "Real"
 
 	                plot_title = f"{source}: Order {order} {comp_label} - Datasets {keys}"
-	                # If you want the swapped axes as in your snippet:
-	                cmesh = plot_data(
-	                    ax=ax,
-	                    X=Y,  # swapped
-	                    Y=X,  # swapped
-	                    Z=Z,
-	                    title=plot_title,
-	                    freq_label="Frequency",
-	                    cmap=cmap
-	                )
+	                if order == 3:
+	                	cmesh = plot_data(
+	                		ax=ax,
+	                		X=X,
+	                		Y=Y,
+	                		Z=Z,
+	                		title=plot_title,
+	                		freq_label="Frequency",
+	                		cmap=cmap)
+	                else:
+                		cmesh = plot_data(
+                		ax=ax,
+                		X=X,
+                		Y=Y,
+                		Z=Z,
+                		title=plot_title,
+                		freq_label="Frequency",
+                		cmap=cmap)
+
 	                configure_axes(fig, ax, cmesh)
 	        plt.tight_layout()
 	        plt.show()

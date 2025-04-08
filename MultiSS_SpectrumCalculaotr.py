@@ -92,6 +92,9 @@ class SpectrumCalculator:
         self.cross2_selected = (self.cconfig.cross_corr_2 
                                 if hasattr(self.cconfig, 'cross_corr_2') and isinstance(self.cconfig.cross_corr_2, list)
                                 else [])
+        self.cross3_selected = (self.cconfig.cross_corr_3 
+                                if hasattr(self.cconfig, 'cross_corr_3') and isinstance(self.cconfig.cross_corr_3, list)
+                                else [])
         self.cross4_selected = (self.cconfig.cross_corr_4 
                                 if hasattr(self.cconfig, 'cross_corr_4') and isinstance(self.cconfig.cross_corr_4, list)
                                 else [])
@@ -121,42 +124,50 @@ class SpectrumCalculator:
         # Helper to initialize dictionaries for both selected and cross datasets
         self.n_chunks = {i: 0 for i in self.selected}
         self.n_chunks.update({(k1, k2): 0 for k1, k2 in self.cross2_selected})
+        self.n_chunks.update({(k1, k2, k3): 0 for k1, k2, k3 in self.cross3_selected})
         self.n_chunks.update({(k1, k2, k3, k4): 0 for k1, k2, k3, k4 in self.cross4_selected})
 
         self.m = {1: None, 2: None, 3: None, 4: None}
         self.m_var = {1: None, 2: None, 3: None, 4: None}
 
         # For frequency, spectra, error, etc.
-        keys = self.selected + self.cross2_selected + self.cross4_selected
+        keys = self.selected + self.cross2_selected + self.cross3_selected + self.cross4_selected
         self.freq = {key: {2: None, 3: None, 4: None} for key in keys}
         self.f_lists = {key: {2: None, 3: None, 4: None} for key in keys}
 
         self.s = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s.update({key: {2: None} for key in self.cross2_selected})
+        self.s.update({key: {3: None} for key in self.cross3_selected})
         self.s.update({key: {4: None} for key in self.cross4_selected})
 
         self.s_gpu = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_gpu.update({key: {2: None} for key in self.cross2_selected})
+        self.s_gpu.update({key: {3: None} for key in self.cross3_selected})
         self.s_gpu.update({key: {4: None} for key in self.cross4_selected})
 
         self.s_err = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_err.update({key: {2: None} for key in self.cross2_selected})
+        self.s_err.update({key: {3: None} for key in self.cross3_selected})
         self.s_err.update({key: {4: None} for key in self.cross4_selected})
 
         self.s_err_gpu = {key: {1: None, 2: None, 3: None, 4: None} for key in self.selected}
         self.s_err_gpu.update({key: {2: None} for key in self.cross2_selected})
+        self.s_err_gpu.update({key: {3: None} for key in self.cross3_selected})
         self.s_err_gpu.update({key: {4: None} for key in self.cross4_selected})
 
         self.s_errs = {key: {1: None, 2: [], 3: [], 4: []} for key in self.selected}
         self.s_errs.update({key: {2: []} for key in self.cross2_selected})
+        self.s_errs.update({key: {3: []} for key in self.cross3_selected})
         self.s_errs.update({key: {4: []} for key in self.cross4_selected})
 
         self.err_counter = {key: {1: 0, 2: 0, 3: 0, 4: 0} for key in self.selected}
         self.err_counter.update({key: {2: 0} for key in self.cross2_selected})
+        self.err_counter.update({key: {3: 0} for key in self.cross3_selected})
         self.err_counter.update({key: {4: 0} for key in self.cross4_selected})
 
         self.n_error_estimates = {key: {1: 0, 2: 0, 3: 0, 4: 0} for key in self.selected}
         self.n_error_estimates.update({key: {2: 0} for key in self.cross2_selected})
+        self.n_error_estimates.update({key: {3: 0} for key in self.cross3_selected})
         self.n_error_estimates.update({key: {4: 0} for key in self.cross4_selected})
 
     def validate_shapes(self):
@@ -339,11 +350,11 @@ class SpectrumCalculator:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
                 single_spectrum = self.c2(a_w, a_w) / (self.sconfig.dt * (single_window ** 2).sum())
             elif order == 3:
-                a_w = coeffs_gpu[:, f_min_idx:f_max_idx//2, :]
-                a_w2 = a_w
+                a_w1 = coeffs_gpu[:, f_min_idx:f_max_idx//2, :]
+                a_w2 = a_w1
                 coeffs_gpu_p = coeffs_gpu.permute((1, 2, 0))
                 a_w3 = self.calc_a_w3(coeffs_gpu_p, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi)
-                single_spectrum = self.c3(a_w, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
+                single_spectrum = self.c3(a_w1, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
 
             elif order == 4:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
@@ -361,6 +372,16 @@ class SpectrumCalculator:
                 a_w1 = coeffs_gpu_dict[key1][:, f_min_idx:f_max_idx, :]
                 a_w2 = coeffs_gpu_dict[key2][:, f_min_idx:f_max_idx, :]
                 single_spectrum = self.c2(a_w1, a_w2) / (self.sconfig.dt * (single_window ** 2).sum())
+
+            if order == 3:
+                key1, key2, key3 = keys[0], keys[1], keys[2]
+
+                a_w1 = coeffs_gpu_dict[key1][:, f_min_idx:f_max_idx//2, :]
+                a_w2 = coeffs_gpu_dict[key2][:, f_min_idx:f_max_idx//2, :]
+                coeffs_gpu_p = coeffs_gpu_dict[key3].permute((1, 2, 0))
+                a_w3 = self.calc_a_w3(coeffs_gpu_p, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi)
+                single_spectrum = self.c3(a_w1, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
+
             if order == 4:
                 key1, key2, key3, key4 = keys[0], keys[1], keys[2], keys[3]
 
@@ -405,6 +426,9 @@ class SpectrumCalculator:
 
         self.err_counter.update({j: {2: 0} for j in self.cross2_selected})
         self.n_error_estimates.update({j: {2: 0} for j in self.cross2_selected})
+        # for cross3
+        self.err_counter.update({j: {3: 0} for j in self.cross3_selected})
+        self.n_error_estimates.update({j: {3: 0} for j in self.cross3_selected})
         # for cross4
         self.err_counter.update({j: {4: 0} for j in self.cross4_selected})
         self.n_error_estimates.update({j: {4: 0} for j in self.cross4_selected})
@@ -431,6 +455,18 @@ class SpectrumCalculator:
                     self.s_err[cross2_idx][order] = None
                     self.s_err_gpu[cross2_idx][order] = None
                     self.s_errs[cross2_idx][order] = []
+
+        # Properly initialize cross4 sets
+        for cross3_idx in self.cross3_selected:
+            for order in orders:
+                if order == 3:
+                    self.f_lists[cross3_idx][order] = f_lists
+                    self.freq[cross3_idx][order] = None
+                    self.s[cross3_idx][order] = None
+                    self.s_gpu[cross3_idx][order] = None
+                    self.s_err[cross3_idx][order] = None
+                    self.s_err_gpu[cross3_idx][order] = None
+                    self.s_errs[cross3_idx][order] = []
 
         # Properly initialize cross4 sets
         for cross4_idx in self.cross4_selected:
@@ -500,7 +536,7 @@ class SpectrumCalculator:
     def _to_device(self, array):
         """Converts a NumPy array to a torch tensor on the proper device."""
         tensor = torch.from_numpy(array.astype(np.float32)) if self.use_float32 else torch.from_numpy(array)
-        return tensor.to(self.device)#.float()
+        return tensor.to(self.device)
 
     def _compute_fft(self, window, chunk_gpu):
         """Computes the FFT (full or real) and applies scaling and shift if needed."""
@@ -544,6 +580,11 @@ class SpectrumCalculator:
             for pair in self.cross2_selected:
                 self.array_prep([2], freq_all_freq[f_min_idx:f_max_idx], pair)
 
+        # Prepare arrays for cross-spectra 3 
+        if self.cross3_selected:
+            for tpair in self.cross3_selected:
+                self.array_prep([3], freq_all_freq[f_min_idx:f_max_idx], tpair)
+
         # Prepare arrays for cross-spectra 4 
         if self.cross4_selected:
             for fpair in self.cross4_selected:
@@ -577,7 +618,7 @@ class SpectrumCalculator:
                         if self.n_chunks[dataset_idx] == self.sconfig.break_after:
                             break
 
-                for cross_group, order in [(self.cross2_selected, 2), (self.cross4_selected, 4)]:
+                for cross_group, order in [(self.cross2_selected, 2), (self.cross3_selected, 3), (self.cross4_selected, 4)]:
                     if cross_group:
                         for keys in cross_group:
                             if any(a_w_all_dict.get(k) is None for k in keys):
@@ -598,7 +639,7 @@ class SpectrumCalculator:
         for dataset_idx in self.selected:
             self.store_final_spectrum(orders, self.n_chunks[dataset_idx], dataset_idx)
 
-        for cross_keys, order in [(self.cross2_selected, 2), (self.cross4_selected, 4)]:
+        for cross_keys, order in [(self.cross2_selected, 2), (self.cross3_selected, 3), (self.cross4_selected, 4)]:
             if cross_keys:
                 for keys in cross_keys:
                     self.store_final_spectrum([order], self.n_chunks[keys], keys)
