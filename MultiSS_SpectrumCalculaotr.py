@@ -213,53 +213,35 @@ class SpectrumCalculator:
         return s2.squeeze(-1)
 
     def a_w3_gen(self, f_max_idx, m):
-        a_w3 = np.ones((f_max_idx // 2, f_max_idx // 2, m), dtype=complex) * 1j
+        a_w3 = torch.ones((f_max_idx // 2, f_max_idx // 2, m), dtype=torch.complex64) *1j
         return a_w3
     def index_generation_to_aw_3(self, f_max_idx):
-        indices = np.arange(f_max_idx // 2)[:, None] + np.arange(f_max_idx // 2)
-        print(f'The shape of indices : {indices.shape}')
-        print(f'indices: {indices}')
+        #indices = np.arange(f_max_idx // 2)[:, None] + np.arange(f_max_idx // 2)
+        indices = torch.arange(f_max_idx // 2).unsqueeze(1) + torch.arange(f_max_idx // 2)
         return indices
 
-    def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices, backend):
-        if backend == 'cpu':
-            #a_w3[np.arange(f_max_idx // 2), :, :] = a_w_all[indices, 0, :m]
-            print(f'a_w3 shape is : {a_w3.shape}')
-            print(f'a_w_all shape is : {a_w_all.shape}')
-            a_w3[:, np.arange(f_max_idx // 2), :] = a_w_all[indices, 0, :m]
-            print(f'a_w3 shape after is : {a_w3.shape}')
+    def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices): # the complex type must be unified to prevent mismatch errors
+        # match dtype
+        if a_w3.dtype != a_w_all.dtype:
+            a_w3 = a_w3.to(a_w_all.dtype)
+        # same device
+        if a_w3.device != a_w_all.device:
+            a_w3 = a_w3.to(a_w_all.device)
 
-            a_w3 = a_w3.conj()
+        row_ids = torch.arange(f_max_idx // 2, device=a_w_all.device)
+        a_w3[row_ids, :, :] = a_w_all[indices, 0, :m]
+        return a_w3.conj()
 
 
-        elif backend in ['cuda', 'mps']:
-            device = torch.device(backend)
-            a_w_all = torch.from_numpy(a_w_all).to(device)
-            a_w3 = torch.from_numpy(a_w3).to(device)
-            indices = torch.from_numpy(indices).to(device)
-            a_w3[torch.arange(f_max_idx // 2), :, :] = a_w_all[indices, 0, :m]
-            a_w3 = a_w3.conj()
-            a_w3 = a_w3.cpu().numpy()
-        return a_w3
-    
     def c3(self, a_w1, a_w2, a_w3):
         m = self.sconfig.m
 
-        print(f'a_w1 shape is {a_w1.shape}')
         a_w1_modified = a_w1.transpose(-1, -2)
-        print(f'a_w1_modified shape is {a_w1_modified.shape}')
-        a_w1_modified_stacked = a_w1_modified.tile((1, a_w2.shape[1], 1))
-        print(f'a_w1_modified_stacked shape is {a_w1_modified_stacked.shape}')
+        a_w1_modified_stacked = a_w1_modified.expand(a_w1_modified.size(0), a_w2.size(1), a_w1_modified.size(2))
 
+        a_w2_modified_stacked = a_w2.expand((a_w2.size(0), a_w2.size(1), a_w1.size(1)))
 
-        print(f'a_w2 shape is {a_w2.shape}')
-        a_w2_modified_stacked = a_w2.tile((1, 1, a_w1.shape[1]))
-        print(f'a_w2_modified_stacked shape is {a_w2_modified_stacked.shape}')
-
-
-        print(f'a_w3 shape is {a_w3.shape}')
         a_w3_modified = a_w3.permute(2, 0, 1)
-        print(f'a_w3_modified shape is {a_w3_modified.shape}')
 
         d_12 = a_w1_modified_stacked * a_w2_modified_stacked
         d_13 = a_w1_modified_stacked * a_w3_modified
@@ -272,9 +254,8 @@ class SpectrumCalculator:
                                                      d_13_mean * d_2_mean - d_23_mean * d_1_mean +
                                                      2 * d_1_mean * d_2_mean * d_3_mean)
 
-        print('yay!')
-
         return s3
+
 
     def c4(self, a_w1, a_w2, a_w3, a_w4):
         m = self.sconfig.m
@@ -360,14 +341,8 @@ class SpectrumCalculator:
             elif order == 3:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx//2, :]
                 a_w2 = a_w
-                coeffs_cpu = coeffs_gpu.cpu().numpy()
-                #print(f'coeffs_cpu shape is {coeffs_cpu.shape}')
-
-                coeffs_cpu = np.transpose(coeffs_cpu, (1, 2, 0))  
-                ##coeffs_gpu = coeffs_gpu.permute(2, 0, 1)
-                t1 = self.calc_a_w3(coeffs_cpu, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi, self.sconfig.backend)
-                a_w3 = torch.from_numpy(t1).to(self.sconfig.backend)
-                print(f'a_w3 shape after calc_a_w3--> {a_w3.shape}')
+                coeffs_gpu_p = coeffs_gpu.permute((1, 2, 0))
+                a_w3 = self.calc_a_w3(coeffs_gpu_p, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi)
                 single_spectrum = self.c3(a_w, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
 
             elif order == 4:
@@ -525,7 +500,7 @@ class SpectrumCalculator:
     def _to_device(self, array):
         """Converts a NumPy array to a torch tensor on the proper device."""
         tensor = torch.from_numpy(array.astype(np.float32)) if self.use_float32 else torch.from_numpy(array)
-        return tensor.to(self.device)
+        return tensor.to(self.device)#.float()
 
     def _compute_fft(self, window, chunk_gpu):
         """Computes the FFT (full or real) and applies scaling and shift if needed."""
@@ -548,11 +523,9 @@ class SpectrumCalculator:
         for order in orders:
             self.m[order] = m
 
-        self.a_w3_init = self.a_w3_gen(f_max_idx, self.sconfig.m)
-        self.indi = self.index_generation_to_aw_3(f_max_idx)
-        print(self.a_w3_init.shape)
-        print(self.indi.shape)
-
+        if 3 in orders: # this might not optimal because the same thing is being generated multiple times.
+            self.a_w3_init = self.a_w3_gen(f_max_idx, self.sconfig.m).to(self.device)
+            self.indi = self.index_generation_to_aw_3(f_max_idx).to(self.device)
 
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten().reshape((m, window_points, 1))
