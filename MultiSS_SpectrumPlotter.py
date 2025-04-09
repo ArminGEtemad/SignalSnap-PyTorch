@@ -259,9 +259,6 @@ class SpectrumPlotter:
 	    for source, selected_keys in [("selected", self.scalc.selected)]:
 	        for keys in selected_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
-	            if order == 3 and freq_data is not None:
-		            half_size = freq_data.size // 2
-		            freq_data = freq_data[:half_size]
 		            
 	            if s_data is not None and freq_data is not None:
 	                datasets_normal.append((keys, source, s_data, s_err_data, freq_data))
@@ -341,9 +338,6 @@ class SpectrumPlotter:
 	    for source, cross_keys in [("cross", cross_list)]:
 	        for keys in cross_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
-	            if order == 3 and freq_data is not None:
-		            half_size = freq_data.size // 2
-		            freq_data = freq_data[:half_size]
 	            if s_data is not None and freq_data is not None:
 	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 

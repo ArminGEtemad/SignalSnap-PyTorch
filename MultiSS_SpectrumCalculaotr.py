@@ -397,7 +397,11 @@ class SpectrumCalculator:
     def array_prep(self, orders, f_all_in, dataset_idx):
         f_max_idx = f_all_in.shape[0]
         for order in orders:
-            self.freq[dataset_idx][order] = f_all_in
+            if order == 3:
+                half_size = int(f_max_idx//2)
+                self.freq[dataset_idx][order] = f_all_in[:half_size]
+            else:
+                self.freq[dataset_idx][order] = f_all_in
             if order == 1:
                 self.s_errs[dataset_idx][order] = torch.ones((1, self.sconfig.m_var), 
                                                              device=self.sconfig.backend,
