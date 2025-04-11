@@ -224,11 +224,13 @@ class SpectrumCalculator:
         return s2.squeeze(-1)
 
     def a_w3_gen(self, f_max_idx, m):
-        a_w3 = torch.ones((f_max_idx // 2, f_max_idx // 2, m), dtype=torch.complex64) *1j
+        n = 2 * (f_max_idx // 2) - 1
+        a_w3 = torch.ones((f_max_idx // 2, n, m), dtype=torch.complex64) *1j
         return a_w3
+
     def index_generation_to_aw_3(self, f_max_idx):
-        #indices = np.arange(f_max_idx // 2)[:, None] + np.arange(f_max_idx // 2)
-        indices = torch.arange(f_max_idx // 2).unsqueeze(1) + torch.arange(f_max_idx // 2)
+        n = f_max_idx // 2
+        indices = torch.arange(n).unsqueeze(1) + torch.arange(-(n - 1), n)
         return indices
 
     def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices): # the complex type must be unified to prevent mismatch errors
@@ -352,7 +354,9 @@ class SpectrumCalculator:
             elif order == 3:
                 a_w1 = coeffs_gpu[:, f_min_idx:f_max_idx//2, :]
                 a_w2 = a_w1
+                a_w1 = torch.cat((a_w1[:, 1:, :].flip([1]).conj(), a_w1), dim=1)
                 coeffs_gpu_p = coeffs_gpu.permute((1, 2, 0))
+                coeffs_gpu_p = torch.cat((coeffs_gpu_p, torch.conj(coeffs_gpu_p[1:, :, :].flip([0]))), dim=0)
                 a_w3 = self.calc_a_w3(coeffs_gpu_p, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi)
                 single_spectrum = self.c3(a_w1, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
 
@@ -400,6 +404,7 @@ class SpectrumCalculator:
             if order == 3:
                 half_size = int(f_max_idx//2)
                 self.freq[dataset_idx][order] = f_all_in[:half_size]
+                self.freq[dataset_idx][order] = np.concatenate((-self.freq[dataset_idx][order][:0:-1], self.freq[dataset_idx][order]))
             else:
                 self.freq[dataset_idx][order] = f_all_in
             if order == 1:
@@ -412,7 +417,8 @@ class SpectrumCalculator:
                                                              dtype=torch.complex64)
             elif order == 3:
                 # for cross/cross4 we can have 2D freq
-                self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, f_max_idx//2, self.sconfig.m_var),
+                n = 2 * (f_max_idx // 2) - 1
+                self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, n, self.sconfig.m_var),
                                                              device=self.sconfig.backend,
                                                              dtype=torch.complex64)
             elif order == 4:
@@ -565,7 +571,9 @@ class SpectrumCalculator:
 
         if 3 in orders: # this might not optimal because the same thing is being generated multiple times.
             self.a_w3_init = self.a_w3_gen(f_max_idx, self.sconfig.m).to(self.device)
+
             self.indi = self.index_generation_to_aw_3(f_max_idx).to(self.device)
+            #print(self.indi)
 
         single_window, _ = cg_window(int(window_points), self.fs)
         window = np.array(m * [single_window]).flatten().reshape((m, window_points, 1))
