@@ -2,13 +2,14 @@ import numpy as np
 import h5py
 
 class SpectrumConfig:
-    def __init__(self, dt, f_unit='Hz', f_max=None, f_min=0, f_lists=None,
+    def __init__(self, dt, f_unit='Hz', f_max=None, f_min=0, s3_calc='1/4', f_lists=None,
                  backend='mps', spectrum_size=100, order_in='all',
                  m=10, m_var=10, show_first_frame=True, break_after=int(1e6)):
         self.dt = dt
         self.f_unit = f_unit
         self.f_max = f_max
         self.f_min = f_min
+        self.s3_calc = s3_calc #TODO s3_calc can be either '1/4' or '1/2' for now. I will add '1' to it too. 
         self.f_lists = f_lists
         self.backend = backend
         self.spectrum_size = spectrum_size

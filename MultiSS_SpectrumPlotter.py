@@ -42,13 +42,13 @@ def custom_colormap():
     cmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', colors_list_2)
     return cmap
 
-def custom_error_colormap():
+def custom_error_colormap(insignif_transparency):
 
     color_array = [
         (0.0, 0.0, 0.0, 0.0),  # transparent
-        (1.0, 1.0, 1.0, 0.8),  # semi-transparent green
+        (1.0, 1.0, 1.0, insignif_transparency),  # semi-transparent green
     ]
-    return LinearSegmentedColormap.from_list('green_alpha', color_array)
+    return LinearSegmentedColormap.from_list('white_alpha', color_array)
 
 class SpectrumPlotter:
 	def __init__(self, sconfig: SpectrumConfig, cconfig: CrossConfig, scalc: SpectrumCalculator,  pconfig: PlotConfig):
@@ -66,7 +66,7 @@ class SpectrumPlotter:
 	        s_err_data = self.scalc.s_err[keys][order].copy() if self.scalc.s_err[keys][order] is not None else None
 	        freq_data = self.scalc.freq[keys][order].copy() if self.scalc.freq[keys][order] is not None else None
 	    except (KeyError, AttributeError):
-	        s_data, s_err_data, freq_data = None, None, None  # Handle missing data gracefully
+	        s_data, s_err_data, freq_data = None, None, None
 	    return s_data, s_err_data, freq_data
 
 	def signif_bound_calculate(self, s_data, s_err_data):
@@ -250,7 +250,7 @@ class SpectrumPlotter:
 	        fig.colorbar(cmesh, ax=ax)
 
 	    cmap = custom_colormap()
-	    cmap_err  = custom_error_colormap()
+	    cmap_err  = custom_error_colormap(self.pconfig.insignif_transparency)
 
 	    # -------------------------------------------------------------------------
 	    # 1. Plot normal (selected) order-N spectra
@@ -259,6 +259,8 @@ class SpectrumPlotter:
 	    for source, selected_keys in [("selected", self.scalc.selected)]:
 	        for keys in selected_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
+	            if s_err_data is not None:
+	            	s_err_data *= self.pconfig.significance 
 		            
 	            if s_data is not None and freq_data is not None:
 	                datasets_normal.append((keys, source, s_data, s_err_data, freq_data))
@@ -283,7 +285,13 @@ class SpectrumPlotter:
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
 	            # Create a 2D grid from 1D frequency data
-	            X, Y = np.meshgrid(freq_data, freq_data)
+	            if order == 3:
+	            	if self.sconfig.s3_calc == '1/2':
+	            		X, Y = np.meshgrid(freq_data, freq_data[freq_data.size//2:])
+	            	elif self.sconfig.s3_calc == '1/4':
+	            		X, Y = np.meshgrid(freq_data, freq_data)
+	            else:
+	                X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
@@ -338,6 +346,8 @@ class SpectrumPlotter:
 	    for source, cross_keys in [("cross", cross_list)]:
 	        for keys in cross_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
+	            if s_err_data is not None:
+	            	s_err_data *= self.pconfig.significance 
 	            if s_data is not None and freq_data is not None:
 	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 
@@ -360,7 +370,13 @@ class SpectrumPlotter:
 	                    scaled = True
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
-	            X, Y = np.meshgrid(freq_data, freq_data)
+	            if order == 3:
+	            	if self.sconfig.s3_calc == '1/2':
+	            		X, Y = np.meshgrid(freq_data, freq_data[freq_data.size//2:])
+	            	elif self.sconfig.s3_calc == '1/4':
+	            		X, Y = np.meshgrid(freq_data, freq_data)
+	            else:
+	                X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
@@ -464,8 +480,3 @@ class SpectrumPlotter:
 	    	self.display_sN(order=3)
 	    if generate_s4_plots:
 	        self.display_sN(order=4)
-
-
-
-
-
