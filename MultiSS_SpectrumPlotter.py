@@ -283,7 +283,13 @@ class SpectrumPlotter:
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
 	            # Create a 2D grid from 1D frequency data
-	            X, Y = np.meshgrid(freq_data, freq_data)
+	            if order == 3:
+	            	if self.sconfig.s3_calc == '1/2':
+	            		X, Y = np.meshgrid(freq_data, freq_data[freq_data.size//2:])
+	            	elif self.sconfig.s3_calc == '1/4':
+	            		X, Y = np.meshgrid(freq_data, freq_data)
+	            else:
+	                X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
