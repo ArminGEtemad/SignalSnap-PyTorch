@@ -393,6 +393,12 @@ class SpectrumCalculator:
                 a_w1 = coeffs_gpu_dict[key1][:, f_min_idx:f_max_idx//2, :]
                 a_w2 = coeffs_gpu_dict[key2][:, f_min_idx:f_max_idx//2, :]
                 coeffs_gpu_p = coeffs_gpu_dict[key3].permute((1, 2, 0))
+
+                if self.sconfig.s3_calc == '1/2':
+                    a_w1 = torch.cat((a_w1[:, 1:, :].flip([1]).conj(), a_w1), dim=1)
+                    coeffs_gpu_p = torch.cat((coeffs_gpu_p, torch.conj(coeffs_gpu_p[1:, :, :].flip([0]))), dim=0)
+
+                
                 a_w3 = self.calc_a_w3(coeffs_gpu_p, f_max_idx, self.sconfig.m, self.a_w3_init, self.indi)
                 single_spectrum = self.c3(a_w1, a_w2, a_w3) / (self.sconfig.dt * (single_window ** 3).sum())
 
@@ -448,8 +454,8 @@ class SpectrumCalculator:
         orders_to_process = [1, 2, 3, 4] if self.sconfig.order_in == 'all' else self.sconfig.order_in
         if self.sconfig.f_min < 0 and 3 in orders_to_process:
             orders_to_process.remove(3)
-        print('For negative frequencies in order 3 use s3_calc and positive frequencies\n')
-        print("Example: f_min=0, f_max=5, s3_calc='1/2'")
+            print('For negative frequencies in order 3 use s3_calc and positive frequencies\n')
+            print("Example: f_min=0, f_max=5, s3_calc='1/2'")
         return orders_to_process
 
     def reset_variables(self, orders, f_lists=None):
