@@ -240,6 +240,8 @@ class SpectrumPlotter:
 	        ax.set_title(title)
 	        ax.set_xlabel(freq_label)
 	        ax.set_ylabel(freq_label)
+	        ax.set_xlim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
+	        ax.set_ylim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
 	        return cmesh
 
 	    def configure_axes(fig, ax, cmesh):
