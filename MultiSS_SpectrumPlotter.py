@@ -42,13 +42,13 @@ def custom_colormap():
     cmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', colors_list_2)
     return cmap
 
-def custom_error_colormap():
+def custom_error_colormap(insignif_transparency):
 
     color_array = [
         (0.0, 0.0, 0.0, 0.0),  # transparent
-        (1.0, 1.0, 1.0, 0.8),  # semi-transparent green
+        (1.0, 1.0, 1.0, insignif_transparency),  # semi-transparent green
     ]
-    return LinearSegmentedColormap.from_list('green_alpha', color_array)
+    return LinearSegmentedColormap.from_list('white_alpha', color_array)
 
 class SpectrumPlotter:
 	def __init__(self, sconfig: SpectrumConfig, cconfig: CrossConfig, scalc: SpectrumCalculator,  pconfig: PlotConfig):
@@ -250,7 +250,7 @@ class SpectrumPlotter:
 	        fig.colorbar(cmesh, ax=ax)
 
 	    cmap = custom_colormap()
-	    cmap_err  = custom_error_colormap()
+	    cmap_err  = custom_error_colormap(self.pconfig.insignif_transparency)
 
 	    # -------------------------------------------------------------------------
 	    # 1. Plot normal (selected) order-N spectra
@@ -283,7 +283,13 @@ class SpectrumPlotter:
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
 	            # Create a 2D grid from 1D frequency data
-	            X, Y = np.meshgrid(freq_data, freq_data)
+	            if order == 3:
+	            	if self.sconfig.s3_calc == '1/2':
+	            		X, Y = np.meshgrid(freq_data, freq_data[freq_data.size//2:])
+	            	elif self.sconfig.s3_calc == '1/4':
+	            		X, Y = np.meshgrid(freq_data, freq_data)
+	            else:
+	                X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
@@ -360,7 +366,13 @@ class SpectrumPlotter:
 	                    scaled = True
 	                s_data, s_err_data = self.arcsinh_scale(s_data, s_err_data)
 
-	            X, Y = np.meshgrid(freq_data, freq_data)
+	            if order == 3:
+	            	if self.sconfig.s3_calc == '1/2':
+	            		X, Y = np.meshgrid(freq_data, freq_data[freq_data.size//2:])
+	            	elif self.sconfig.s3_calc == '1/4':
+	            		X, Y = np.meshgrid(freq_data, freq_data)
+	            else:
+	                X, Y = np.meshgrid(freq_data, freq_data)
 
 	            for col, ax in enumerate(ax_row):
 	                component = self.pconfig.plot_format[col]
