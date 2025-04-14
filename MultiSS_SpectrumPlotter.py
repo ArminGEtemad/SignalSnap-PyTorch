@@ -240,8 +240,17 @@ class SpectrumPlotter:
 	        ax.set_title(title)
 	        ax.set_xlabel(freq_label)
 	        ax.set_ylabel(freq_label)
-	        ax.set_xlim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
-	        ax.set_ylim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
+	        if order == 3:
+	        	if self.pconfig.plot_lims[0] < 0:
+	        		ax.set_ylim(0, self.pconfig.plot_lims[1]/2)
+	        	else:
+	        		ax.set_ylim(self.pconfig.plot_lims[0]/2, self.pconfig.plot_lims[1]/2)
+	        else:
+	        	ax.set_ylim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
+	        if order == 3:
+	        	ax.set_xlim(self.pconfig.plot_lims[0]/2, self.pconfig.plot_lims[1]/2)
+	        else:
+	        	ax.set_xlim(self.pconfig.plot_lims[0], self.pconfig.plot_lims[1])
 	        return cmesh
 
 	    def configure_axes(fig, ax, cmesh):
@@ -261,8 +270,6 @@ class SpectrumPlotter:
 	    for source, selected_keys in [("selected", self.scalc.selected)]:
 	        for keys in selected_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
-	            if s_err_data is not None:
-	            	s_err_data *= self.pconfig.significance 
 		            
 	            if s_data is not None and freq_data is not None:
 	                datasets_normal.append((keys, source, s_data, s_err_data, freq_data))
@@ -321,6 +328,7 @@ class SpectrumPlotter:
 	                configure_axes(fig, ax, cmesh)
 
 	                if s_err_data is not None:
+	                    s_err_data *= self.pconfig.significance 
 	                    err_matrix = np.zeros_like(Z, dtype=float)
 						# Mark 1 where the error is larger than the signal
 	                    err_matrix[np.abs(Z) < s_err_data] = 1
@@ -348,8 +356,6 @@ class SpectrumPlotter:
 	    for source, cross_keys in [("cross", cross_list)]:
 	        for keys in cross_keys:
 	            s_data, s_err_data, freq_data = self.import_spec_data(order, keys)
-	            if s_err_data is not None:
-	            	s_err_data *= self.pconfig.significance 
 	            if s_data is not None and freq_data is not None:
 	                datasets_cross.append((keys, source, s_data, s_err_data, freq_data))
 
@@ -413,6 +419,7 @@ class SpectrumPlotter:
                 		cmap=cmap)
 
                 	if s_err_data is not None:
+	                    s_err_data *= self.pconfig.significance 
 	                    err_matrix = np.zeros_like(Z, dtype=float)
 						# Mark 1 where the error is larger than the signal
 	                    err_matrix[np.abs(Z) < s_err_data] = 1

@@ -118,9 +118,7 @@ class SpectrumCalculator:
 
         # MPS backend precision support
         if self.sconfig.backend == 'mps':
-            self.use_float32 = True
-            print('MPS backend on Apple hardware supports single precision.\n'
-                  'Using float32 for all tensors!')
+            self.use_float32 = True  
         else:
             self.use_float32 = False
 
