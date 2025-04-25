@@ -37,6 +37,9 @@ class SpectrumConfig:
         self.validate() # validating data rightly after creating the object. 
 
     def validate(self):
+        """
+        Helper function to validate user input. 
+        """
         if not isinstance(self.dt, (float)) or self.dt <= 0:
             raise InvalidConfigError(f"Invalid 'dt': {self.dt}.\n"
                                      f"Must be float and positive.")
@@ -85,6 +88,15 @@ class SpectrumConfig:
 
 class DataImportConfig:
     def __init__(self, data=None, path=None, group_key=None, dataset=None, dt=None):
+        """
+        data can be imported in two ways. 
+        First way is to give the data directly. if the array is in the script itself
+        Second way is to import the hdf data by giving
+        path
+        group key
+        data set
+        and the dt in the file
+        """
         self.data = data
         self.path = path
         self.group_key = group_key

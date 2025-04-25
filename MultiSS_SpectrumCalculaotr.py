@@ -39,9 +39,26 @@ def unit_conversion(f_unit):
         raise ValueError(f'Unknown frequency unit: {f_unit}')
     return t_unit
 
-# ---- Helper functions related to confinded Gaussian window ----
+# ------------------------------------------------------------------
+#  Helper functions related to confinded Gaussian window 
+# ------------------------------------------------------------------
 @njit
 def g(x, n_windows, l, sigma_t):
+    """
+    Helper function to calculate the approx. confined gaussian window
+    as defined in https://doi.org/10.1016/j.sigpro.2014.03.033
+
+    Parameters
+    ----------
+    x : array
+        points at which to calculate the function
+    n_windows : int
+        length of window in points
+    l : int
+        n_windows + 1
+    sigma_t : float
+        parameter of the approx. confined gaussian window (is 0.14)
+    """
     ge_e = x - n_windows/2
     ge_d = 2 * l * sigma_t
 
@@ -53,6 +70,21 @@ def g(x, n_windows, l, sigma_t):
 
 @njit
 def calc_window(x, n_windows, l, sigma_t):
+    """
+    Helper function to calculate the approx. confined gaussian window
+    as defined in https://doi.org/10.1016/j.sigpro.2014.03.033
+
+    Parameters
+    ----------
+    x : array
+        points at which to calculate the function
+    n_windows : int
+        length of window in points
+    l : int
+        n_windows + 1
+    sigma_t : float
+        parameter of the approx. confined gaussian window (is 0.14)
+    """
     term_x = g(x, n_windows, l, sigma_t)
     term_h = g(-0.5, n_windows, l, sigma_t)
     term_x_p_l = g(x + l, n_windows, l, sigma_t)
@@ -67,7 +99,15 @@ def calc_window(x, n_windows, l, sigma_t):
 @njit
 def cg_window(n_windows, fs):
     """
-    confined Gaussian window
+    Helper function to calculate the approx. confined gaussian window
+    as defined in https://doi.org/10.1016/j.sigpro.2014.03.033
+    
+    Parameters
+    ----------
+    N_window : int
+        length of window in points
+    fs : float
+        sampling rate of the signal
     """
     x = np.linspace(0, n_windows, n_windows)
     l = n_windows + 1
@@ -79,9 +119,29 @@ def cg_window(n_windows, fs):
 
     return window_full, norm
 
-# ---------------------------------------------------------------
+# ------------------------------------------------------------------
 
 class SpectrumCalculator:
+    """
+    Handling the calculation of polyspectra and preparing them for
+    saving, visulization or any other assessment. The data and
+    configuration of the calculation are set in SpectrumConfig, CrossConfig.
+    These configurations are passed here for final calculation.
+
+    Attributes
+    ----------
+    sconfig: Obj
+        configuration of the parameters needed to calculate higher order spectra
+        generally
+    cconfing: Obj
+        configuration of the parameters needed to calculate cross higher order
+        spectra
+    diconfig_list: list
+        list of the data
+    selected: list
+        list of indices of the data to be selected for further calculation and
+        evaluation
+    """
     def __init__(self, sconfig: SpectrumConfig, cconfig: CrossConfig, 
                  diconfig_list: list[DataImportConfig], selected=None):
         self.sconfig = sconfig
@@ -111,7 +171,7 @@ class SpectrumCalculator:
         self._init_dicts()
         
         self.import_data()
-        self.validate_shapes()  # Crash if data shapes mismatch
+        self.validate_shapes() # Crash if data shapes mismatch
 
         # Flag to use full FFT (for negative frequencies)
         self.use_full_fft = (self.sconfig.f_min < 0)
@@ -123,7 +183,10 @@ class SpectrumCalculator:
             self.use_float32 = False
 
     def _init_dicts(self):
-        # Helper to initialize dictionaries for both selected and cross datasets
+        """
+        Helper to initialize bookkeeping dictionaries for both selected and cross datasets
+        TODO: refactor 
+        """
         self.n_chunks = {i: 0 for i in self.selected}
         self.n_chunks.update({(k1, k2): 0 for k1, k2 in self.cross2_selected})
         self.n_chunks.update({(k1, k2, k3): 0 for k1, k2, k3 in self.cross3_selected})
@@ -173,12 +236,20 @@ class SpectrumCalculator:
         self.n_error_estimates.update({key: {4: 0} for key in self.cross4_selected})
 
     def validate_shapes(self):
+        """
+        helper function to make sure that data are the same length
+        """
         expected_shape = self.diconfig_list[self.selected[0]].data.shape[0]
         for data_config in self.diconfig_list:
             if data_config.data.shape[0] != expected_shape:
                 raise ValueError('Imported data must have same length!')
 
     def import_data(self):
+        """
+        cheks if the data is being imported from the script or externally.
+        If the data is external the data_config.data must be None
+        and the path to this external file must be given to data_config.path
+        """
         for data_config in self.diconfig_list:
             if data_config.data is None and data_config.path is not None:
                 with h5py.File(data_config.path, 'r') as main:
@@ -192,6 +263,9 @@ class SpectrumCalculator:
                     print(f"Data loaded from {data_config.path}")
 
     def plot_first_frames(self, selected, window_size):
+        """
+        visualizes the first frame of the selected data.
+        """
         n_plots = len(selected)
         fig, axes = plt.subplots(n_plots, 1, figsize=(14, 3 * n_plots))
         if n_plots == 1:
@@ -208,8 +282,15 @@ class SpectrumCalculator:
         plt.tight_layout()
         plt.show()
 
-    # ---- Calculating unbiased cumulants ----
+    # ------------------------------------------------------------------
+    #  Calculating unbiased cumulants c1, c2, c3, c4
+    # ------------------------------------------------------------------
     def c1(self, a_w):
+        """
+        first order cumulant is the mean value
+        C_1 = < a_w >
+        here, <...> denotes the mean
+        """
         s1 = torch.mean(a_w, dim=0)
         if self.use_full_fft:
             dc_index = s1.shape[0] // 2
@@ -218,15 +299,31 @@ class SpectrumCalculator:
             return s1[0]
 
     def c2(self, a_w1, a_w2):
+        """
+        second order cumulant is the covariance
+        C_2 = m / (m - 1) . (<a_w1 . a_w2*> - <a_w1> <a_w2*>)
+        the * indicated the complex conjugate and <...> denotes the mean.
+        m / (m - 1) is the unbiased estimator for covariance
+        for more info see arXiv:1904.12154
+        """
         a_w2_star = torch.conj(a_w2)
         term_1 = torch.mean(a_w1 * a_w2_star, dim=0)
+        
+        # The number of windows `m` used for the calculation is obtained from `self.config.m`
         factor = self.sconfig.m / (self.sconfig.m - 1)
+        
         term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
         s2 = factor * (term_1 - term_2)
         return s2.squeeze(-1)
 
     def a_w3_gen(self, f_max_idx, m):
-        if self.sconfig.s3_calc == '1/2':
+        """
+        generates an initialization tensor which will be used to calculate c3.
+        here sconfig.s3_calc can either be 1/2 or 1/4, which is chosen by the user.
+        1/2 to calculate positive and negative frequencies for x axis.
+        1/4 to calculate positive frequencies only.
+        """
+        if self.sconfig.s3_calc == '1/2': 
             n = 2 * (f_max_idx // 2) - 1
             a_w3 = torch.ones((f_max_idx // 2, n, m), dtype=torch.complex64) *1j
         elif self.sconfig.s3_calc == '1/4':
@@ -234,6 +331,13 @@ class SpectrumCalculator:
         return a_w3
 
     def index_generation_to_aw_3(self, f_max_idx):
+        """
+        Constructs an index matrix to correctly place elements of the Fourier coefficients
+        of the signal in the desired order, accounting for potential spectrum symmetry.
+        here sconfig.s3_calc can either be 1/2 or 1/4, which is chosen by the user.
+        1/2 to calculate positive and negative frequencies for x axis.
+        1/4 to calculate positive frequencies only.
+        """
         if self.sconfig.s3_calc == '1/2':
             n = f_max_idx // 2
             indices = torch.arange(n).unsqueeze(1) + torch.arange(-(n - 1), n)
@@ -241,7 +345,8 @@ class SpectrumCalculator:
             indices = torch.arange(f_max_idx // 2).unsqueeze(1) + torch.arange(f_max_idx // 2)
         return indices
 
-    def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices): # the complex type must be unified to prevent mismatch errors
+    def calc_a_w3(self, a_w_all, f_max_idx, m, a_w3, indices):
+    # the complex type must be unified to prevent mismatch errors
         # match dtype
         if a_w3.dtype != a_w_all.dtype:
             a_w3 = a_w3.to(a_w_all.dtype)
@@ -255,10 +360,22 @@ class SpectrumCalculator:
 
 
     def c3(self, a_w1, a_w2, a_w3):
+        """
+        third order cumulant
+        C_3 = m^2 / [(m - 1)(m - 2)] . (< a_w1 . a_w2 . a_w3 >
+               - < a_w1 >< a_w2 . a_w3 > - < a_w1 . a_w2 >< a_w3 > - < a_w1 . a_w3 >< a_w2 >
+               + 2 < a_w1 >< a_w2 >< a_w3 >)
+        with w3 = - w1 - w2 and as before <...> denotes the mean
+        the factor m^2 / (m - 1)(m - 2) is the unbiased estimator for the third order cumulant
+        (see arXiv:1904.12154)
+        """
+
+        # The number of windows `m` used for the calculation is obtained from `self.config.m`
         m = self.sconfig.m
 
         a_w1_modified = a_w1.transpose(-1, -2)
-        a_w1_modified_stacked = a_w1_modified.expand(a_w1_modified.size(0), a_w2.size(1), a_w1_modified.size(2))
+        a_w1_modified_stacked = a_w1_modified.expand(a_w1_modified.size(0), a_w2.size(1),
+                                                     a_w1_modified.size(2))
 
         a_w2_modified_stacked = a_w2.expand((a_w2.size(0), a_w2.size(1), a_w1.size(1)))
 
@@ -269,22 +386,37 @@ class SpectrumCalculator:
         d_23 = a_w2_modified_stacked * a_w3_modified
         d_123 = d_12 * a_w3_modified
 
-        d_means = [torch.mean(d, dim=0) for d in [a_w1_modified_stacked, a_w2_modified_stacked, a_w3_modified, d_12, d_13, d_23, d_123]]
+        d_means = [torch.mean(d, dim=0) for d in [a_w1_modified_stacked, a_w2_modified_stacked,
+                                                  a_w3_modified, d_12, d_13, d_23, d_123]]
+        
         d_1_mean, d_2_mean, d_3_mean, d_12_mean, d_13_mean, d_23_mean, d_123_mean = d_means
         s3 = m ** 2 / ((m - 1) * (m - 2)) * (d_123_mean - d_12_mean * d_3_mean -
-                                                     d_13_mean * d_2_mean - d_23_mean * d_1_mean +
-                                                     2 * d_1_mean * d_2_mean * d_3_mean)
+                                             d_13_mean * d_2_mean - d_23_mean * d_1_mean +
+                                             2 * d_1_mean * d_2_mean * d_3_mean)
 
         return s3
 
 
     def c4(self, a_w1, a_w2, a_w3, a_w4):
+        """
+        fourth order cumulant
+        C_4 = m^2 / [(m - 1)(m - 2)(m - 3)] . 
+              {(m + 1)<(a_w1 - <a_w1>)(a_w2 - <a_w2>)(a_w3 - <a_w3>)(a_w3 - <a_w3>) >
+               - (m + 1)[<(a_w1 - <a_w1>)(a_w2 - <a_w2>)> <(a_w3 - <a_w3>)(a_w3 - <a_w3>)>
+                         + 2 o.p.]}
+         <...> denotes the mean
+        see arXiv:1904.12154 for more information
+        """
+
+        # The number of windows `m` used for the calculation is obtained from `self.config.m`
         m = self.sconfig.m
 
+        # --- for a better readability ---
         x = a_w1
         y = torch.conj(a_w2)
         z = a_w3
         w = torch.conj(a_w4)
+        # --------------------------------
 
         x_mean = x - x.mean(dim=0, keepdim=True)
         y_mean = y - y.mean(dim=0, keepdim=True)
@@ -313,9 +445,13 @@ class SpectrumCalculator:
             )
         return s4
 
-    # ----------------------------------------
+    # ------------------------------------------------------------------
 
     def store_sum_single_spectrum(self, single_spectrum, order, dataset_idx):
+        """
+        Helper function to store the spectra of single frames afterwards used 
+        for calculation of errors and overlaps.
+        """
         if self.s_gpu[dataset_idx][order] is None:
             self.s_gpu[dataset_idx][order] = single_spectrum
         else:
@@ -344,6 +480,9 @@ class SpectrumCalculator:
             self.err_counter[dataset_idx][order] = 0
 
     def store_final_spectrum(self, orders, n_chunks, dataset_idx):
+        """
+        helper function to store the final result after avereging all the results from the chunks
+        """
         for order in orders:
             if self.s_gpu.get(dataset_idx, {}).get(order) is not None:
                 self.s_gpu[dataset_idx][order] /= n_chunks
@@ -352,6 +491,10 @@ class SpectrumCalculator:
                     (1 / self.n_error_estimates[dataset_idx][order]) * np.sqrt(self.s_err[dataset_idx][order])) / 2  # for interlaced calculation
 
     def fourier_coeffs_to_spectra(self, orders, coeffs_gpu, f_min_idx, f_max_idx, single_window, dataset_idx):
+        """
+        Helper function to calculate the (1,2,3,4)-order cumulant from the Fourier coefficients of the windows in
+        one frame.
+        """
         for order in orders:
             if order == 1:
                 a_w = coeffs_gpu[:, f_min_idx:f_max_idx, :]
@@ -379,6 +522,11 @@ class SpectrumCalculator:
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
 
     def fourier_coeffs_to_cross_spectra(self, orders, coeffs_gpu_dict, f_min_idx, f_max_idx, single_window, *keys):
+         """
+        Helper function to calculate the (1,2,3,4)-order cumulant from the Fourier coefficients of the windows in
+        one frame. This function is essentially a more general way of fourier_coeffs_to_spectra function which
+        can also calculate cross-spectra.
+        """
         for order in orders:
             if len(keys) < order:
                 raise ValueError(f"Need at least {order} keys for order {order}")
@@ -417,13 +565,17 @@ class SpectrumCalculator:
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order, keys)
 
     def array_prep(self, orders, f_all_in, dataset_idx):
+        """
+        Helper function to initialize the arrays for errors.
+        """
         f_max_idx = f_all_in.shape[0]
         for order in orders:
             if order == 3:
                 half_size = int(f_max_idx//2)
                 self.freq[dataset_idx][order] = f_all_in[:half_size]
                 if self.sconfig.s3_calc == '1/2':
-                    self.freq[dataset_idx][order] = np.concatenate((-self.freq[dataset_idx][order][:0:-1], self.freq[dataset_idx][order]))
+                    self.freq[dataset_idx][order] = np.concatenate((-self.freq[dataset_idx][order][:0:-1], 
+                                                                     self.freq[dataset_idx][order]))
             else:
                 self.freq[dataset_idx][order] = f_all_in
             if order == 1:
@@ -435,14 +587,16 @@ class SpectrumCalculator:
                                                              device=self.sconfig.backend,
                                                              dtype=torch.complex64)
             elif order == 3:
-                # for cross/cross4 we can have 2D freq
-                if self.sconfig.s3_calc == '1/2':
+                # for cross/cross3 we can have 2D freq
+                if self.sconfig.s3_calc == '1/2': # non-negative x axis
                     n = 2 * (f_max_idx // 2) - 1
-                    self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, n, self.sconfig.m_var),
+                    self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, n,
+                                                                  self.sconfig.m_var),
                                                                  device=self.sconfig.backend,
                                                                  dtype=torch.complex64)
-                elif self.sconfig.s3_calc == '1/4':
-                    self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, f_max_idx//2, self.sconfig.m_var),
+                elif self.sconfig.s3_calc == '1/4':# negative and positive x axis
+                    self.s_errs[dataset_idx][order] = torch.ones((f_max_idx//2, f_max_idx//2,
+                                                                  self.sconfig.m_var),
                                                                  device=self.sconfig.backend,
                                                                  dtype=torch.complex64)
 
@@ -453,6 +607,9 @@ class SpectrumCalculator:
                                                              dtype=torch.complex64)
 
     def process_order(self):
+        """
+        Helper function to turn the user input to meaningful array for functions.
+        """
         orders_to_process = [1, 2, 3, 4] if self.sconfig.order_in == 'all' else self.sconfig.order_in
         if self.sconfig.f_min < 0 and 3 in orders_to_process:
             orders_to_process.remove(3)
@@ -461,6 +618,9 @@ class SpectrumCalculator:
         return orders_to_process
 
     def reset_variables(self, orders, f_lists=None):
+        """
+        TODO: refactor
+        """
         self.err_counter = {i: {1: 0, 2: 0, 3: 0, 4: 0} for i in self.selected}
         self.n_error_estimates = {i: {1: 0, 2: 0, 3: 0, 4: 0} for i in self.selected}
 
@@ -527,12 +687,19 @@ class SpectrumCalculator:
         return orders
 
     def setup_calc_spec(self, orders):
+        """
+        calculating the needed parameters to calculate spectra
+        """
         f_max_allowed = 1 / (2 * self.sconfig.dt)
         if self.sconfig.f_max is None:
+            # even if a maximum frequency is not given, the program does not crash
+            # using Nyquist frequency which is half the sampling rate of a 
+            # discrete system
             self.sconfig.f_max = f_max_allowed
 
         window_len_factor = f_max_allowed / (self.sconfig.f_max - self.sconfig.f_min)
-        self.t_window = (self.sconfig.spectrum_size - 1) * (2 * self.sconfig.dt * window_len_factor)
+        self.t_window = (self.sconfig.spectrum_size - 1) *
+                                (2 * self.sconfig.dt * window_len_factor)
 
         n_data_points = self.diconfig_list[self.selected[0]].data.shape[0]
         window_points = int(np.round(self.t_window / self.sconfig.dt))
@@ -560,9 +727,11 @@ class SpectrumCalculator:
         n_windows = int(np.floor(n_data_points / (m * window_points)))
         # Create frequency axis using full FFT if needed
         if self.use_full_fft:
+            # if negative frequencies are needed
             freq_all_freq = np.fft.fftfreq(window_points, self.sconfig.dt)
             freq_all_freq = np.fft.fftshift(freq_all_freq)
         else:
+            # for non-negative frequencies only
             freq_all_freq = np.fft.rfftfreq(window_points, self.sconfig.dt)
 
         # Determine indices for frequency band
@@ -574,12 +743,16 @@ class SpectrumCalculator:
         return m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows
 
     def _to_device(self, array):
-        """Converts a NumPy array to a torch tensor on the proper device."""
+        """
+        Helper function that converts a NumPy array to a torch tensor on the proper device.
+        """
         tensor = torch.from_numpy(array.astype(np.float32)) if self.use_float32 else torch.from_numpy(array)
         return tensor.to(self.device)
 
     def _compute_fft(self, window, chunk_gpu):
-        """Computes the FFT (full or real) and applies scaling and shift if needed."""
+        """
+        Helper function that computes the FFT (full or real) and applies scaling and shift if needed.
+        """
         if self.use_full_fft:
             a_w = torch.fft.fft(window * chunk_gpu, dim=1)
             a_w *= self.sconfig.dt
@@ -591,7 +764,7 @@ class SpectrumCalculator:
 
     def calc_spec(self):
         """
-        Calculate spectra using PyTorch.
+        main funtion that calculates spectra.
         """
         orders = self.reset()
         m, window_points, freq_all_freq, f_max_idx, f_min_idx, n_windows = self.setup_calc_spec(orders)
