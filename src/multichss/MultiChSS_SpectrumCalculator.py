@@ -7,8 +7,8 @@ from tqdm.auto import tqdm
 import torch
 from numba import njit
 from scipy.fft import rfftfreq
-from MultiChSS_SpectrumConfig import SpectrumConfig, DataImportConfig
-from MultiChSS_CrossConfig import CrossConfig
+from .MultiChSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+from .MultiChSS_CrossConfig import CrossConfig
 import pandas as pd
 from tabulate import tabulate
 
