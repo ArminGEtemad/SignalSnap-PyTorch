@@ -9,7 +9,7 @@ setup(
     license='BSD-3-Clause',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/https://github.com/ArminGEtemad/SignalSnap2/multichss',  
+    url='https://github.com/ArminGEtemad/SignalSnap2/tree/main/src/multichss',  
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     classifiers=[
