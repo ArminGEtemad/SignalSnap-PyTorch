@@ -1,7 +1,7 @@
-from MultiSS_SpectrumCalculaotr import SpectrumCalculator
-from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
-from MultiSS_CrossConfig import CrossConfig
-from MultiSS_PlotConfig import PlotConfig
+from MultiChSS_SpectrumCalculator import SpectrumCalculator
+from MultiChSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+from MultiChSS_CrossConfig import CrossConfig
+from MultiChSS_PlotConfig import PlotConfig
 
 import pandas as pd
 import numpy as np

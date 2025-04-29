@@ -7,8 +7,8 @@ from tqdm.auto import tqdm
 import torch
 from numba import njit
 from scipy.fft import rfftfreq
-from MultiSS_SpectrumConfig import SpectrumConfig, DataImportConfig
-from MultiSS_CrossConfig import CrossConfig
+from MultiChSS_SpectrumConfig import SpectrumConfig, DataImportConfig
+from MultiChSS_CrossConfig import CrossConfig
 import pandas as pd
 from tabulate import tabulate
 
@@ -522,7 +522,7 @@ class SpectrumCalculator:
             self.store_sum_single_spectrum(torch.conj(single_spectrum), order, dataset_idx)
 
     def fourier_coeffs_to_cross_spectra(self, orders, coeffs_gpu_dict, f_min_idx, f_max_idx, single_window, *keys):
-         """
+        """
         Helper function to calculate the (1,2,3,4)-order cumulant from the Fourier coefficients of the windows in
         one frame. This function is essentially a more general way of fourier_coeffs_to_spectra function which
         can also calculate cross-spectra.
@@ -698,8 +698,7 @@ class SpectrumCalculator:
             self.sconfig.f_max = f_max_allowed
 
         window_len_factor = f_max_allowed / (self.sconfig.f_max - self.sconfig.f_min)
-        self.t_window = (self.sconfig.spectrum_size - 1) *
-                                (2 * self.sconfig.dt * window_len_factor)
+        self.t_window = (self.sconfig.spectrum_size - 1) * (2 * self.sconfig.dt * window_len_factor)
 
         n_data_points = self.diconfig_list[self.selected[0]].data.shape[0]
         window_points = int(np.round(self.t_window / self.sconfig.dt))
