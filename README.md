@@ -29,7 +29,7 @@ In SignalSnap, you can calculate these spectra by first easily make your data in
 config1 = DataImportConfig(data=signal_trace_1)
 config2 = DataImportConfig(data=signal_trace_2)
 data_config_list = [config1, config2]
-selected_data = [0,1]
+selected_data = [0, 1]
 ```
 Then you need to give SignalSnap your settings and configuration for further calculation:
 ```python
@@ -66,11 +66,31 @@ of higher order spectra for such correlations:
 ```math
 2\pi\,\delta(\omega_1 + \cdots + \omega_n) \,S^{(n)}_{z_1, \cdots, z_n}(\omega_1, \cdots , \omega_{n-1})= C_n\big(z_1(\omega_1), \cdots, z_n(\omega_n)\big)
 ```
+The cross-correlation spectra can be calculated simply by giving SignalSnap the instruction:
+```python
+cconfig = CrossConfig(auto_corr=True, cross_corr_2=[(0, 1), (1, 0)], 
+                                      cross_corr_3=[(0, 1, 1), (1, 0, 0), (0, 0, 1)]''' or any other permutation''', 
+                                      cross_corr_4=[(1, 0, 0, 1), (1, 1, 0, 0)]''' or any other permutation''') 
+```
+Of course, if you are only interested in cross-correlation spectra you could set `auto_corr=False`. If you have more than two signal traces, e.g., `data_config_list = [config1, config2, config3]` and `selected_data = [0, 1, 2]` the cross-correlation spectra could have more indices:
+```python
+cconfig = CrossConfig(auto_corr=True, cross_corr_2=[(0, 1), (2, 0)]''' or any other permutation''', 
+                                      cross_corr_3=[(0, 1, 1), (2, 0, 0), (0, 2, 1)]''' or any other permutation''',
+                                      cross_corr_4=[(1, 0, 0, 1), (1, 1, 0, 0), (1, 2, 0, 2), (1, 2, 2, 1)]''' or any other permutation''') 
+```
 
 ## Some bechmarking
-The optimized new version of SignalSnap is much faster for higher resolutions
+The optimized new version of SignalSnap is much faster for higher resolutions. This calculation was done on 5GB of data on our PC with a GeForce RTX 4090 and for now only for the second order spectrum.
+![Runtime Comparison](images/cuda_comparison.png)
 
 ## Why is SignalSnap (ArrayFire) still important?
+The version of SignalSnap introduced [here](https://github.com/MarkusSifft/SignalSnap) is still important and of interest, when you are looking for more functions, such as 
+* downsampling
+* signle photon regime measurements
+* test of stationarity
+* adding random phase to data
+* if you have an AMD graphic card
+
 
 ## Support
 The development of the SignalSnap package is supported by the working group Spectroscopy of Condensed Matter of the Faculty of Physics and Astronomy at the Ruhr University Bochum.
