@@ -81,7 +81,7 @@ cconfig = CrossConfig(auto_corr=True, cross_corr_2=[(0, 1), (2, 0)]''' or any ot
 
 ## Some bechmarking
 The optimized new version of SignalSnap is much faster for higher resolutions. This calculation was done on 5GB of data on our PC with a GeForce RTX 4090 and for now only for the second order spectrum.
-![Runtime Comparison](images/cuda_comparison.png)
+![Runtime Comparison](Images/cuda_comparison.png)
 
 ## Why is SignalSnap (ArrayFire) still important?
 The version of SignalSnap introduced [here](https://github.com/MarkusSifft/SignalSnap) is still important and of interest, when you are looking for more functions, such as 
