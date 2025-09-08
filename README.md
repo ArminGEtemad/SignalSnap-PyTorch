@@ -9,6 +9,19 @@ to be more user friendly, faster and easier to maintain. The decision to change 
 * This active community provides extensive documentation, tutorials, and community-driven support, making it easier for developers to adopt and contribute to SignalSnap.
 * Transitioning to PyTorch positions SignalSnap favorably for future development. This ensures long-term compatibility and easier maintenance compared to less mainstream frameworks.
 
+## Installation
+Right now, you can clone this repository
+
+```bash
+git clone https://github.com/ArminGEtemad/SignalSnap-PyTorch.git
+```
+and install it locally
+```bash
+pip install .
+```
+
+In the future, we add PyPI for a seamless installation of the package.
+
 ## What are higher order spectra?
 Higher-order spectra contain additional information that is not contained within the second order spectrum. SignalSnap is not only capable of calculating the first- and second-order but also
 third- and four-order spectrum.
