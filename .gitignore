@@ -1,1 +1,34 @@
+# macOS
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# VSCode or IDEs
+.vscode/
+.idea/
+
+# Testing / coverage
+htmlcov/
+.tox/
+.coverage
+.cache/
+
+
