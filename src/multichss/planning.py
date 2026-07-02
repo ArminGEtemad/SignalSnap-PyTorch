@@ -57,7 +57,8 @@ class RuntimeConfig:
     s3_calc : Literal["1/4", "1/2"]
         Method used for third-order spectrum calculation.
     spectral_estimates: int
-        Number of spectral estimates.
+        Number of spectral estimates that will be yielded by ``iter_window_slices`` and processed by
+        the pipeline.
     interlacing : bool = True
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original

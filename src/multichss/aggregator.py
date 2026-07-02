@@ -17,10 +17,11 @@ from .results import SpectrumResult
 def accumulate_spectrum(
     result: SpectrumResult, single_spectrum: Tensor, shifted: bool = False
 ) -> None:
-    """Accumulate one spectral estimate into a result object.
+    """Accumulate one spectral estimate into the result object.
 
-    Adds the spectrum to the running mean accumulator and stores running sums of squared real and
-    imaginary components used later to estimate the standard error of the mean.
+    Adds the spectral estimate to the running mean accumulator and stores running sums of squared
+    real and imaginary components used later to estimate the standard error of the mean. Spectral
+    estimates and the squared component are accumulated separately for shifted and unshifted data.
     """
 
     if result.freq is None:

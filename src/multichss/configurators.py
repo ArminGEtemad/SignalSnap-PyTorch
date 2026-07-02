@@ -204,14 +204,16 @@ class SpectrumConfig(BaseModel):
         device is ``mps`` and ``double`` otherwise.
     spectral_estimates_max : int | None = int(1e6)
         Maximum number of spectral estimates. If ``None``, as many estimates as possible are
-        calculated based on the data. If `interlacing = True`, the first half of the spectral
-        estimates will be computed on unshifted data and the second half using shifted data. The 
-        true number of spectral estimates may be lower if the data does not have enough samples.
+        calculated based on the data. If ``interlacing = True``, the first half of the spectral
+        estimates will be computed on unshifted data and the second half using shifted data. If
+        ``spectral_estimates_max`` is odd, there will be one more unshifted than shifted spectrum.
+        The true number of spectral estimates may be lower if the data does not have enough samples.
         Must be positive.
     interlacing : bool = True
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
-        window edges.
+        window edges. Error estimates are calculated separately for unshifted and shifted spectra; 
+        when both are available, the reported error is the component-wise maximum of both estimates.
     old_window : bool = False
         Compatibility option. If set to ``True``, the approximated confined Gaussian window from
         the old API is used as a window function.
