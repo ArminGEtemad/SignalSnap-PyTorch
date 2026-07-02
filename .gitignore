@@ -32,3 +32,8 @@ htmlcov/
 .cache/
 
 
+tests/test_gaussian_noise.py
+tests/test_data/references/gaussian_noise_m_10.npz
+tests/test_data/references/gaussian_noise_m_20.npz
+tests/test_data/references/gaussian_noise_m_200.npz
+tests/test_data/references/gaussian_noise_m_15.npz
