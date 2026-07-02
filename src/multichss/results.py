@@ -46,15 +46,26 @@ class SpectrumResult:
     spectrum : np.ndarray | None
         The final normalized spectral values transferred back to the CPU.
     spectrum_error : np.ndarray | None
-        The final calculated standard error of the mean (SEM) or variance values transferred back to
-        the CPU.
-    spectrum_accumulator : torch.Tensor | None
-        Running total accumulation buffer of the calculated spectra on the active torch device
-    error_accumulator_x_squared : torch.Tensor | None
-        Running total accumulation buffer of the real and imaginary parts of the spectra squared on
-        the active torch device.
-    chunks_processed : int
-        The total number of individual spectral estimates integrated into `spectrum_accumulator`.
+        The final calculated standard error of the mean (SEM) values transferred back to the CPU. If
+        interlacing was enabled, this is the maximum of the unshifted and shifted spectrum error.
+    spectrum_accumulator_unshifted : torch.Tensor | None
+        Running total accumulation buffer of the unshifted calculated spectra on the active torch
+        device.
+    spectrum_accumulator_shifted : torch.Tensor | None
+        Running total accumulation buffer of the shifted calculated spectra on the active torch
+        device. Only used when interlacing is enabled.
+    error_accumulator_x_squared_unshifted : torch.Tensor | None
+        Running total accumulation buffer of the real and imaginary parts of the unshifted spectra
+        squared on the active torch device.
+    error_accumulator_x_squared_shifted : torch.Tensor | None
+        Running total accumulation buffer of the real and imaginary parts of the shifted spectra
+        squared on the active torch device. Only used when interlacing is enabled.
+    chunks_processed_unshifted : int
+        The total number of individual unshifted spectral estimates integrated into
+        `spectrum_accumulator_unshifted`.
+    chunks_processed_shifted : int
+        The total number of individual shifted spectral estimates integrated into
+        `spectrum_accumulator_shifted`.
     """
 
     order: int
@@ -65,10 +76,13 @@ class SpectrumResult:
     spectrum: np.ndarray | None = None
     spectrum_error: np.ndarray | None = None
 
-    spectrum_accumulator: Tensor | None = None
-    error_accumulator_x_squared: Tensor | None = None
+    spectrum_accumulator_unshifted: Tensor | None = None
+    spectrum_accumulator_shifted: Tensor | None = None
+    error_accumulator_x_squared_unshifted: Tensor | None = None
+    error_accumulator_x_squared_shifted: Tensor | None = None
 
-    chunks_processed: int = 0
+    chunks_processed_unshifted: int = 0
+    chunks_processed_shifted: int = 0
 
     def reset_state(self):
         """Clears accumulators to prepare for a fresh calculation."""
@@ -76,9 +90,12 @@ class SpectrumResult:
         self.freq_unit = None
         self.spectrum = None
         self.spectrum_error = None
-        self.spectrum_accumulator = None
-        self.error_accumulator_x_squared = None
-        self.chunks_processed = 0
+        self.spectrum_accumulator_unshifted = None
+        self.spectrum_accumulator_shifted = None
+        self.error_accumulator_x_squared_unshifted = None
+        self.error_accumulator_x_squared_shifted = None
+        self.chunks_processed_unshifted = 0
+        self.chunks_processed_shifted = 0
 
     def initialize_arrays(self, runtime: RuntimeConfig) -> None:
         """Initialize frequency axis and units from the resolved runtime configuration."""

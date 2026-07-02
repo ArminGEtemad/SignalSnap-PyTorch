@@ -204,8 +204,10 @@ class SpectrumConfig(BaseModel):
         device is ``mps`` and ``double`` otherwise.
     spectral_estimates_max : int | None = int(1e6)
         Maximum number of spectral estimates. If ``None``, as many estimates as possible are
-        calculated based on the data. The true number of spectral estimates may be lower if the data
-        does not have enough samples. Must be positive.
+        calculated based on the data. If `interlacing = True`, the first half of the spectral
+        estimates will be computed on unshifted data and the second half using shifted data. The 
+        true number of spectral estimates may be lower if the data does not have enough samples.
+        Must be positive.
     interlacing : bool = True
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original

@@ -201,24 +201,42 @@ def prepare_windows(runtime: RuntimeConfig) -> tuple[Tensor, Tensor]:
     return single_window, repeated_window
 
 
-def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int]]:
+def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
     """Return the window slice indices.
     
-    Each yielded ``(start, end)`` selects ``m * N`` samples from a one-dimensional data channel,
+    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data channel,
     where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled, additional
     slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
     """
 
     chunk_size = runtime.window_points * runtime.m
-    n_windows = runtime.n_data_points // chunk_size
-    for window_index in range(n_windows):
-        base = window_index * chunk_size
-        shifts = (0, runtime.window_points // 2) if runtime.interlacing else (0,)
-        for shift in shifts:
-            start = base + shift
+    n_chunks = runtime.n_data_points // chunk_size
+
+    if runtime.interlacing:
+        n_chunks_unshifted = (runtime.spectral_estimates + 1) // 2
+        for chunk_index in range(n_chunks):
+            if chunk_index == n_chunks_unshifted:
+                break
+            start = chunk_index * chunk_size
+            end = start + chunk_size
+            yield start, end, False
+
+        shift = runtime.window_points // 2
+        n_chunks_shifted = runtime.spectral_estimates - n_chunks_unshifted
+        for chunk_index in range(n_chunks):
+            if chunk_index == n_chunks_shifted:
+                break
+            start = chunk_index * chunk_size + shift
             end = start + chunk_size
             if end <= runtime.n_data_points:
-                yield start, end
+                yield start, end, True
+    else:
+        for chunk_index in range(n_chunks):
+            if chunk_index == runtime.spectral_estimates:
+                break
+            start = chunk_index * chunk_size
+            end = start + chunk_size
+            yield start, end, False
 
 
 def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarray:

@@ -52,10 +52,7 @@ def calculate_spectra(
         build_third_order_cache(runtime_config) if 3 in runtime_config.orders else None
     )
 
-    for chunk_index, (start, end) in enumerate(iter_window_slices(runtime_config)):
-        if chunk_index >= runtime_config.spectral_estimates:
-            break
-
+    for start, end, shifted in iter_window_slices(runtime_config):
         coeffs_by_channel = {}
 
         for channel in runtime_config.selected_channels:
@@ -73,7 +70,7 @@ def calculate_spectra(
                 third_order_cache=third_order_cache,
             )
             result = result_store.get(task.channels, task.order)
-            accumulate_spectrum(result, spectrum)
+            accumulate_spectrum(result, spectrum, shifted=shifted)
 
     for result in result_store.results.values():
         finalize_result(result)
