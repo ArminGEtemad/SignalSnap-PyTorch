@@ -2,9 +2,9 @@ name: Run Tests
 
 on:
   push:
-    branches: [New_API_cons_to_multichqc]
+    branches: [refactor]
   pull_request:
-    branches: [New_API_cons_to_multichqc]
+    branches: [refactor]
 
 jobs: 
   test:
