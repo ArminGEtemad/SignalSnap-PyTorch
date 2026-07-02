@@ -204,9 +204,9 @@ def prepare_windows(runtime: RuntimeConfig) -> tuple[Tensor, Tensor]:
 def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
     """Return the window slice indices.
     
-    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data channel,
-    where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled, additional
-    slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
+    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data
+    channel, where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled,
+    additional slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
     """
 
     chunk_size = runtime.window_points * runtime.m

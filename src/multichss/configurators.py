@@ -67,7 +67,8 @@ class DataConfig(BaseModel):
     :class:`~multichss.planning.RuntimeConfig`.
 
     Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
-    used to determine the number of data points (``window_points``) used for each Fourier transform::
+    used to determine the number of data points (``window_points``) used for each Fourier 
+    transform::
 
         window_points = 1 / (dt * df)
 

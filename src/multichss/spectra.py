@@ -55,8 +55,8 @@ def compute_single_spectrum(
 
     Returns a conjugated, window-normalized spectrum. Output shape depends on order: order 1 returns
     ``(1,)``, order 2 returns ``(F,)``, order 3 returns ``(H, H)`` for ``s3_calc="1/4"`` or
-    ``(H, 2 * H - 1)`` for ``s3_calc="1/2"`` with ``H = runtime.f_max_idx // 2``, and order 4 returns
-     ``(F, F)``.
+    ``(H, 2 * H - 1)`` for ``s3_calc="1/2"`` with ``H = runtime.f_max_idx // 2``, and order 4
+    returns ``(F, F)``.
 
     Third-order shapes assume the calculation starts at ``runtime.f_min_idx == 0``.
     """
