@@ -8,7 +8,8 @@ import pytest
 from multichss.configurators import CrossConfig, DataConfig, SpectrumConfig
 from multichss.pipelines import calculate_spectra
 
-# old error erstimation is different, so pytest will fail if set to true
+# compare_error should be set to False for real github tests, since the old api calculates a short
+# term error which is different from what is currently implemented in the new api
 compare_error = False
 
 auto_keys = [
@@ -145,6 +146,7 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
 
     for channel, order in keys:
         result = result_store.get(channel, order)
+        assert old_spectra is not None
         assert result.spectrum is not None
 
         if name == "auto":
@@ -159,6 +161,15 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             atol=1e-8,
             err_msg=f"Spectrum at order {order} for channel {channel} doesn't match.",
         )
+        assert old_freqs is not None
+        assert result.freq is not None
+        np.testing.assert_allclose(
+            np.asarray(result.freq),
+            np.asarray(old_freqs[normalized_channel][order]),
+            rtol=0,
+            atol=1e-12,
+            err_msg=f"Frequency axis at order {order} for channel {channel} doesn't match.",
+        )
 
         if compare_error:
             assert old_error is not None
@@ -171,13 +182,3 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
                 atol=1e-8,
                 err_msg=f"Spectrum error at order {order} for channel {channel} doesn't match.",
             )
-
-        assert result.freq is not None
-
-        np.testing.assert_allclose(
-            np.asarray(result.freq),
-            np.asarray(old_freqs[normalized_channel][order]),
-            rtol=0,
-            atol=1e-12,
-            err_msg=f"Frequency axis at order {order} for channel {channel} doesn't match.",
-        )
