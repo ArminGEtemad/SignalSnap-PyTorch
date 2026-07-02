@@ -72,6 +72,7 @@ def finalize_result(result: SpectrumResult) -> None:
     if result.chunks_processed_unshifted == 0:
         raise ValueError("Cannot finalize result without processed chunks.")
 
+    # Finalize Spectrum
     if result.spectrum_accumulator_shifted is None:
         result.spectrum_accumulator_unshifted /= result.chunks_processed_unshifted
         result.spectrum = result.spectrum_accumulator_unshifted.cpu().resolve_conj().numpy()
@@ -84,12 +85,15 @@ def finalize_result(result: SpectrumResult) -> None:
         result.spectrum_accumulator_unshifted /= result.chunks_processed_unshifted
         result.spectrum_accumulator_shifted /= result.chunks_processed_shifted
 
+
+    # Finalize Error
     assert result.error_accumulator_x_squared_unshifted is not None
 
     if result.chunks_processed_unshifted == 1:
         result.spectrum_error = None
         print("Need at least two unshifted spectra estimates for an error estimation.")
     else:
+        # Unshifted error
         var_factor_unshifted = result.chunks_processed_unshifted / (
             result.chunks_processed_unshifted - 1
         )
@@ -114,6 +118,7 @@ def finalize_result(result: SpectrumResult) -> None:
             .numpy()
         )
         if result.chunks_processed_shifted >= 2:
+            # Shifted error
             assert result.error_accumulator_x_squared_shifted is not None
             assert result.spectrum_accumulator_shifted is not None
 
@@ -149,6 +154,7 @@ def finalize_result(result: SpectrumResult) -> None:
             )
             result.spectrum_error = error_re + 1j * error_im
         else:
+            # Unshifted error
             if result.chunks_processed_shifted == 1:
                 print(
                     "Only using spectrum error from the unshifted spectral estimates, since there"
