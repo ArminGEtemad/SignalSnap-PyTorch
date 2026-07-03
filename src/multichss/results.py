@@ -33,7 +33,7 @@ class SpectrumResult:
         ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)`` indicates
         a cross-spectrum between channels 0 and 1.
     freq : np.ndarray | None
-        Frequency axis associated with the spectrum. For orders 1, 2, and 4 this is the selected
+        Frequency axis associated with the spectrum. For orders 2, and 4 this is the selected
         frequency band. For third-order spectra with ``s3_calc="1/4"``, this is the nonnegative axis
         used for both dimensions. For ``s3_calc="1/2"``, this is the mirrored x-axis; the
         nonnegative y-axis is obtained as ``freq[freq.size // 2:]``.
@@ -105,7 +105,9 @@ class SpectrumResult:
         order = self.order
         f_size = runtime.freq_band.shape[0]
 
-        if order == 3:
+        if order == 1:
+            self.freq = np.asarray([0.0])
+        elif order == 3:
             half_size = f_size // 2
             self.freq = runtime.freq_band[:half_size]
 

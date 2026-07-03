@@ -5,23 +5,14 @@ import h5py
 import numpy as np
 import pytest
 
-from multichss.configurators import CrossConfig, DataConfig, SpectrumConfig
+from multichss.configurators import DataConfig, SpectrumConfig
 from multichss.pipelines import calculate_spectra
 
 # compare_error should be set to False for real github tests, since the old api calculates a short
 # term error which is different from what is currently implemented in the new api
 compare_error = False
 
-auto_keys = [
-    (0,),
-    (0, 0),
-    (0, 0, 0),
-    (0, 0, 0, 0),
-    (1,),
-    (1, 1),
-    (1, 1, 1),
-    (1, 1, 1, 1),
-]
+auto_orders = [1, 2, 3, 4]
 cross_keys_ch24 = [
     (0, 1),
     (1, 0),
@@ -49,12 +40,12 @@ def prepared_data():
 
 
 @pytest.mark.parametrize(
-    ("name", "reference_file", "keys"),
+    ("name", "reference_file", "keys_or_orders"),
     [
         pytest.param(
             "auto",
             "./tests/test_data/references/5Qubit_short_data_auto_corr.npz",
-            auto_keys,
+            auto_orders,
             id="auto",
         ),
         pytest.param(
@@ -71,7 +62,7 @@ def prepared_data():
         ),
     ],
 )
-def test_new_vs_old_api(name, reference_file, keys, prepared_data):
+def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
     """
     Tests if the refactor implements the same calculations. To check if the
     implementation is correct, the old window function needs to be used in
@@ -87,21 +78,13 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
         old_error = None
 
     old_freqs = benchmark_spectra["freqs"].item()
-
-    cross_corr_2 = []
-    cross_corr_3 = []
-    cross_corr_4 = []
-    orders = []
-    for channel in keys:
-        order = len(channel)
-        if order not in orders:
-            orders.append(order)
-        if order == 2:
-            cross_corr_2.append(channel)
-        elif order == 3:
-            cross_corr_3.append(channel)
-        if order == 4:
-            cross_corr_4.append(channel)
+    
+    auto_spectra_orders = []
+    cross_spectra = []
+    if isinstance(keys_or_orders[0],  int):
+        auto_spectra_orders = keys_or_orders
+    else:
+        cross_spectra = keys_or_orders
 
     if name == "auto":
         sconfig = SpectrumConfig(
@@ -109,27 +92,22 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             f_max=0.25,
             s3_calc="1/4",
             device="cpu",
-            orders=orders,
+            auto_spectra_orders=auto_spectra_orders,   
             frequency_points=100,
             interlacing=True,
             old_window=True,
         )
-        cconfig = CrossConfig(auto_corr=True)
     elif name == "cross_ch24":
         sconfig = SpectrumConfig(
             f_min=-0.25,
             f_max=0.25,
             s3_calc="1/4",
             device="cpu",
-            orders=orders,
+            auto_spectra_orders=[],
+            cross_spectra=cross_spectra,
             frequency_points=100,
             interlacing=True,
             old_window=True,
-        )
-        cconfig = CrossConfig(
-            auto_corr=False,
-            cross_corr_2=cross_corr_2,
-            cross_corr_4=cross_corr_4,
         )
     elif name == "cross_ch3":
         sconfig = SpectrumConfig(
@@ -137,18 +115,27 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             f_max=0.25,
             s3_calc="1/2",
             device="cpu",
-            orders=orders,
+            auto_spectra_orders=[],
+            cross_spectra=cross_spectra,
             frequency_points=100,
             interlacing=True,
             old_window=True,
         )
-        cconfig = CrossConfig(auto_corr=False, cross_corr_3=cross_corr_3)
     else:
         raise AssertionError(f"Update test parameters to include a test for {name}")
 
-    result_store = calculate_spectra(sconfig, cconfig, dataconfig_list, selected=selected_data)
+    result_store = calculate_spectra(sconfig, dataconfig_list, selected=selected_data)
 
-    for channel in keys:
+    
+    if auto_spectra_orders:
+        keys_or_orders = []
+        for channel in selected_data:
+            for order in auto_spectra_orders:
+                channels = (channel,) * order
+                keys_or_orders.append(channels)
+
+    
+    for channel in keys_or_orders:
         order = len(channel)
         result = result_store.get(channel)
         assert old_spectra is not None
@@ -168,9 +155,12 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
         )
         assert old_freqs is not None
         assert result.freq is not None
+        expected_freq = (
+            np.asarray([0.0]) if order == 1 else np.asarray(old_freqs[normalized_channel][order])
+        )
         np.testing.assert_allclose(
             np.asarray(result.freq),
-            np.asarray(old_freqs[normalized_channel][order]),
+            expected_freq,
             rtol=0,
             atol=1e-12,
             err_msg=f"Frequency axis at order {order} for channel {channel} doesn't match.",

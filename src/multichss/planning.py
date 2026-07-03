@@ -12,9 +12,9 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from .configurators import CrossConfig, DataConfig, SpectrumConfig
+from .configurators import DataConfig, SpectrumConfig
 from .results import SpectrumResult, SpectrumResultStore
-from .utils import FrequencyUnits, S3Calcs, TimeUnits, unit_conversion_time_to_freq
+from .utils import ChannelIndex, FrequencyUnits, S3Calcs, TimeUnits, unit_conversion_time_to_freq
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,8 +29,9 @@ class RuntimeConfig:
     ----------
     selected_channels : tuple[int, ...]
         Data-channel indices used by the calculation.
-    orders : tuple[int, ...]
-        Spectrum orders to calculate.
+    spectra : tuple[tuple[int,...],...]
+        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index.
     dt : float
         Sampling interval shared by all selected data channels.
     window_points : int
@@ -70,7 +71,7 @@ class RuntimeConfig:
     """
 
     selected_channels: tuple[int, ...]
-    orders: tuple[int, ...]
+    spectra: tuple[tuple[int, ...], ...]
     dt: float
     window_points: int
     m: int
@@ -137,6 +138,58 @@ def _validate_data_configs(
     return first_config.data.shape[0], first_config.dt, first_config.t_unit
 
 
+def _build_requested_spectra_channels(
+    selected_channels: tuple[int, ...],
+    auto_spectra_orders: list[int],
+    cross_spectra: (
+        list[
+            tuple[ChannelIndex, ChannelIndex]
+            | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
+            | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
+        ]
+        | None
+    ),
+) -> tuple[tuple[int, ...], ...]:
+    """Build the concrete spectra channels requested for :class:`RuntimeConfig`.
+
+    Expands the high-level configuration into one channel tuple per spectrum that should be
+    calculated. Auto-correlation spectra are taken for each selected channel and order in
+    ``auto_spectra_orders``. Cross spectra are taken from ``cross_spectra``.
+
+    Parameters
+    ----------
+    selected_channels : tuple[int, ...]
+        Data-channel indices used by the calculation.
+    auto_spectra_orders: list[int]
+        Spectrum orders (between 1 and 4) for which auto-correlation spectra be calculated.
+    cross_spectra:
+        Specifies which multi-channel (cross-correlation) spectra will be calculated. Each tuple
+        represents one cross-correlation spectrum. Each tuple entry is a channel index.
+    """
+
+    spectra: list[tuple[int, ...]] = []
+
+    if auto_spectra_orders:
+        for channel in selected_channels:
+            for order in auto_spectra_orders:
+                channels = (channel,) * order
+                spectra.append(channels)
+
+    if cross_spectra is not None:
+        for channels in cross_spectra:
+            if not all(channel in selected_channels for channel in channels):
+                invalid_channels = tuple(
+                    channel for channel in channels if channel not in selected_channels
+                )
+                raise ValueError(
+                    f"cross_spectra tuple {channels} contains channels that are not in "
+                    f"selected_channels={selected_channels}: {invalid_channels}"
+                )
+            spectra.append(channels)
+
+    return tuple(spectra)
+
+
 def build_runtime_config(
     spectrum_config: SpectrumConfig,
     data_config_list: list[DataConfig],
@@ -186,23 +239,26 @@ def build_runtime_config(
     if window_points <= 0:
         raise ValueError("Calculated window_points must be greater than zero.")
 
-    # Resolve orders='all' to [1, 2, 3, 4]
-    orders = [1, 2, 3, 4] if spectrum_config.orders == "all" else list(spectrum_config.orders)
+    # Resolve spectra from auto_spectra_orders and cross_spectra
+    spectra = _build_requested_spectra_channels(
+        selected_channels, spectrum_config.auto_spectra_orders, spectrum_config.cross_spectra
+    )
 
     # Check if enough data is available and try to lower the window count per cumulant/spectrum
     # estimate if needed
     required_points = window_points * spectrum_config.m
-
     if required_points > n_data_points:
         m = n_data_points // window_points
-        if m < max(orders):
-            raise ValueError("Not enough data points")
         print(
             "Values have been changed, because not enough data points were available."
             f"Old m: {spectrum_config.m}, new m: {m}"
         )
     else:
         m = spectrum_config.m
+
+    orders = set([len(channels) for channels in spectra])
+    if m < max(orders):
+        raise ValueError("Not enough data points")
 
     # get the frequency axis
     use_full_fft = spectrum_config.f_min < 0
@@ -251,7 +307,7 @@ def build_runtime_config(
 
     return RuntimeConfig(
         selected_channels=selected_channels,
-        orders=tuple(orders),
+        spectra=spectra,
         dt=dt,
         window_points=window_points,
         m=m,
@@ -271,78 +327,13 @@ def build_runtime_config(
     )
 
 
-def build_spectrum_tasks(
-    runtime_config: RuntimeConfig, cross_config: CrossConfig
-) -> list[tuple[int, ...]]:
-    """Build the concrete spectrum tasks requested by the configuration.
-
-    Expands the high-level configuration into one channel tuple per spectrum that should be
-    calculated. Auto-correlation tasks are generated for each selected channel when
-    ``cross_config.auto_corr`` is enabled. Cross tasks are generated from ``cross_corr_2``,
-    ``cross_corr_3``, and ``cross_corr_4`` when their corresponding orders are requested.
-
-    Parameters
-    ----------
-    runtime_config : :class:`RuntimeConfig`
-        Configuration for spectrum order, frequency bounds, and numerical calculation settings.
-    cross_config : :class:`CrossConfig`
-        Configuration describing whether auto-spectra and which cross spectra should be calculated.
-
-    Returns
-    -------
-    list[tuple[int, ...]]
-        Ordered list of concrete spectrum calculations to perform.
-    """
-
-    tasks: list[tuple[int,...]] = []
-
-    if cross_config.auto_corr:
-        for channel in runtime_config.selected_channels:
-            for order in runtime_config.orders:
-                channels = (channel,) * order
-                tasks.append(channels)
-
-    cross_specs = {
-        2: cross_config.cross_corr_2 or [],
-        3: cross_config.cross_corr_3 or [],
-        4: cross_config.cross_corr_4 or [],
-    }
-
-    for order, channel_groups in cross_specs.items():
-        if order not in runtime_config.orders:
-            continue
-        for channels in channel_groups:
-            for channel in channels:
-                if channel not in runtime_config.selected_channels:
-                    raise ValueError(
-                        f"Cross spectrum {channels} references channel {channel}, "
-                        f"which is not in selected channels {runtime_config.selected_channels}."
-                    )
-            tasks.append(channels)
-
-    if not tasks:
-        raise ValueError(
-            "No spectrum tasks were requested. This may be because the requested cross-correlation "
-            "spectra are not matching the specified orders in SpectrumConfig."
-        )
-
-    if len(tasks) != len(set(tasks)):
-        raise ValueError("Duplicate spectra were requested.")
-
-    return tasks
-
-
-def initialize_result_store(
-    tasks: list[tuple[int, ...]], runtime: RuntimeConfig
-) -> SpectrumResultStore:
+def initialize_result_store(runtime: RuntimeConfig) -> SpectrumResultStore:
     """Create an initialized result store for a list of spectrum tasks.
 
     Each task is converted into a :class:`SpectrumResult` with matching channels.
 
     Parameters
     ----------
-    tasks : list[tuple[int, ...]]
-        Spectrum tasks that should receive corresponding result containers.
     runtime : :class:`RuntimeConfig`
         :class:`RuntimeConfig` that contains all necessary information to initialize result arrays.
 
@@ -353,7 +344,7 @@ def initialize_result_store(
     """
 
     store = SpectrumResultStore()
-    for channels in tasks:
+    for channels in runtime.spectra:
         store.add(SpectrumResult(channels))
     store.initialize_arrays(runtime)
     return store

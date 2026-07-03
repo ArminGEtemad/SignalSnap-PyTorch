@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from multichss.configurators import CrossConfig, DataConfig, SpectrumConfig
+from multichss.configurators import DataConfig, SpectrumConfig
 from multichss.fft import iter_window_slices
 from multichss.pipelines import calculate_spectra
 from multichss.planning import build_runtime_config
@@ -11,7 +11,7 @@ from multichss.planning import build_runtime_config
     (
         "n_data_points",
         "spectral_estimates_max",
-        "orders",
+        "auto_spectra_orders",
         "frequency_points",
         "f_max",
         "m",
@@ -34,7 +34,7 @@ from multichss.planning import build_runtime_config
 def test_spectral_estimates_in_runtime_config(
     n_data_points,
     spectral_estimates_max,
-    orders,
+    auto_spectra_orders,
     frequency_points,
     f_max,
     m,
@@ -45,7 +45,7 @@ def test_spectral_estimates_in_runtime_config(
         f_min=0.0,
         f_max=f_max,
         frequency_points=frequency_points,
-        orders=orders,
+        auto_spectra_orders=auto_spectra_orders,
         m=m,
         spectral_estimates_max=spectral_estimates_max,
     )
@@ -83,7 +83,7 @@ def test_window_slices_respect_interlacing(
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        orders=[1, 2],
+        auto_spectra_orders=[1, 2],
         m=4,
         spectral_estimates_max=None,
         interlacing=interlacing,
@@ -102,16 +102,15 @@ def test_pipeline_processes_runtime_spectral_estimates():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        orders=[1, 2],
+        auto_spectra_orders=[1, 2],
         m=4,
         spectral_estimates_max=3,
         interlacing=True,
     )
-    cross_config = CrossConfig(auto_corr=True)
     data_config = DataConfig(data=np.ones(256), dt=1.0)
 
     runtime = build_runtime_config(spectrum_config, [data_config])
-    result_store = calculate_spectra(spectrum_config, cross_config, [data_config])
+    result_store = calculate_spectra(spectrum_config, [data_config])
 
     assert runtime.spectral_estimates == 3
 
@@ -129,16 +128,15 @@ def test_pipeline_processes_runtime_spectral_estimates_without_interlacing():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        orders=[1, 2],
+        auto_spectra_orders=[1, 2],
         m=4,
         spectral_estimates_max=None,
         interlacing=False,
     )
-    cross_config = CrossConfig(auto_corr=True)
     data_config = DataConfig(data=np.ones(136), dt=1.0)
 
     runtime = build_runtime_config(spectrum_config, [data_config])
-    result_store = calculate_spectra(spectrum_config, cross_config, [data_config])
+    result_store = calculate_spectra(spectrum_config, [data_config])
 
     assert runtime.spectral_estimates == 2
     for result in result_store.results.values():
@@ -155,7 +153,7 @@ def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        orders=[1, 2],
+        auto_spectra_orders=[1, 2],
         m=4,
         interlacing=False,
         spectral_estimates_max=None,
@@ -173,7 +171,7 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        orders=[1, 2],
+        auto_spectra_orders=[1, 2],
         m=4,
         interlacing=True,
         spectral_estimates_max=None,
@@ -181,6 +179,28 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
     data_config = DataConfig(data=np.ones(64), dt=1.0)
 
     with pytest.raises(ValueError, match="Interlacing was requested"):
+        build_runtime_config(spectrum_config, [data_config])
+
+
+@pytest.mark.parametrize(
+    ("auto_spectra_orders", "m"),
+    [
+        pytest.param([2], 1, id="order-2-needs-at-least-two-windows"),
+        pytest.param([3], 2, id="order-3-needs-at-least-three-windows"),
+        pytest.param([4], 3, id="order-4-needs-at-least-four-windows"),
+    ],
+)
+def test_runtime_config_rejects_m_below_requested_order(auto_spectra_orders, m):
+    spectrum_config = SpectrumConfig(
+        f_min=0.0,
+        f_max=20.0,
+        frequency_points=16,
+        auto_spectra_orders=auto_spectra_orders,
+        m=m,
+    )
+    data_config = DataConfig(data=np.ones(50000), dt=0.001)
+
+    with pytest.raises(ValueError, match="Not enough data points"):
         build_runtime_config(spectrum_config, [data_config])
 
 

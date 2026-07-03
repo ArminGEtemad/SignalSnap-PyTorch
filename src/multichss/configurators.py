@@ -14,50 +14,10 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, DirectoryPath, Field, field_validator, model_validator
 
-from .utils import S3Calcs, TimeUnits
+from .utils import ChannelIndex, S3Calcs, TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
-ChannelIndex = Annotated[int, Field(ge=0)]
-
-
-class CrossConfig(BaseModel):
-    """Configuration to specify which single- or multi-channel spectra are to be computed at each
-    order.
-
-    Attributes
-    ----------
-    auto_corr : bool
-        Determines whether single-channel (auto-correlation) spectra will be calculated.
-    cross_corr_2 : list[tuple[int, int]] | None
-        Specifies which multi-channel (cross-correlation) spectra will be calculated at order 2.
-        Each tuple represents one cross-correlation spectrum. Each tuple entry is a channel index.
-    cross_corr_3 : list[tuple[int, int, int]] | None
-        Specifies which multi-channel (cross-correlation) spectra will be calculated at order 3.
-        Each tuple represents one cross-correlation spectrum. Each tuple entry is a channel index.
-    cross_corr_4 : list[tuple[int, int, int, int]] | None
-        Specifies which multi-channel (cross-correlation) spectra will be calculated at order 4.
-        Each tuple represents one cross-correlation spectrum. Each tuple entry is a channel index.
-    """
-
-    model_config = SHARED_CONFIG
-
-    auto_corr: bool = True
-    cross_corr_2: list[tuple[ChannelIndex, ChannelIndex]] | None = None
-    cross_corr_3: list[tuple[ChannelIndex, ChannelIndex, ChannelIndex]] | None = None
-    cross_corr_4: list[tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]] | None = None
-
-    @model_validator(mode="after")
-    def validate_cross_correlations(self) -> CrossConfig:
-        for corr in [self.cross_corr_2, self.cross_corr_3, self.cross_corr_4]:
-            if corr is None:
-                continue
-            if len(corr) != len(set(corr)):
-                raise ValueError("Cross-correlation entries cannot contain duplicates.")
-            if any(len(set(channels)) == 1 for channels in corr):
-                raise ValueError("Cross-correlation entries cannot include auto-correlations.")
-
-        return self
 
 
 class DataConfig(BaseModel):
@@ -191,8 +151,11 @@ class SpectrumConfig(BaseModel):
         ``dt`` is used.
     frequency_points : int = 100
         Number of frequency points in the specified frequency range. Must be positive.
-    orders : Literal["all"] | list[int] = "all"
-        Spectrum orders (between 1 and 4) to be calculated. ``all`` means orders ``[1, 2, 3, 4]``.
+    auto_spectra_orders : list[int] = ``[1, 2, 3, 4]``
+        Spectrum orders (between 1 and 4) for which auto-correlation spectra be calculated.
+    cross_spectra : list[tuple[ChannelIndex, ...] | None = None
+        Specifies which multi-channel (cross-correlation) spectra will be calculated. Each tuple
+        represents one cross-correlation spectrum. Each tuple entry is a channel index.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
@@ -226,9 +189,15 @@ class SpectrumConfig(BaseModel):
     f_min: float = 0.0
     f_max: float | None = None
     frequency_points: Annotated[int, Field(ge=2)] = 100
-    orders: (
-        Literal["all"] | Annotated[list[Annotated[int, Field(ge=1, le=4)]], Field(min_length=1)]
-    ) = "all"
+    auto_spectra_orders: list[Annotated[int, Field(ge=1, le=4)]] = [1, 2, 3, 4]
+    cross_spectra: (
+        list[
+            tuple[ChannelIndex, ChannelIndex]
+            | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
+            | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
+        ]
+        | None
+    ) = None
     m: Annotated[int, Field(gt=0)] = 10
     s3_calc: S3Calcs = "1/4"
     device: Literal["cpu", "mps", "cuda"] = "cpu"
@@ -243,17 +212,29 @@ class SpectrumConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_spectrum_request(self) -> SpectrumConfig:
-        if self.f_max is not None and self.f_min >= self.f_max:
-            raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
+        if len(self.auto_spectra_orders) != len(set(self.auto_spectra_orders)):
+            raise ValueError("Auto-spectrum orders cannot contain duplicates.")
 
-        if self.orders != "all" and len(self.orders) != len(set(self.orders)):
-            raise ValueError("Orders cannot contain duplicates.")
+        if self.cross_spectra is not None:
+            if len(self.cross_spectra) != len(set(self.cross_spectra)):
+                raise ValueError("Cross-spectra cannot contain duplicates.")
 
-        orders = [1, 2, 3, 4] if self.orders == "all" else self.orders
-        if self.f_min < 0 and 3 in orders:
+            if any(len(set(channels)) == 1 for channels in self.cross_spectra):
+                raise ValueError("Cross-spectra cannot include auto-spectra.")
+
+        requested_orders = set(self.auto_spectra_orders)
+
+        if self.cross_spectra is not None:
+            requested_orders.update(len(channels) for channels in self.cross_spectra)
+
+        if not requested_orders:
+            raise ValueError("At least one auto-order or cross-spectrum must be requested.")
+
+        if self.f_min != 0 and 3 in requested_orders:
             raise ValueError(
-                "Third-order spectra cannot be requested with f_min < 0. "
-                "Use f_min=0 and s3_calc='1/2' for the third-order negative-frequency convention."
+                "Third-order spectra cannot be requested with f_min != 0. "
+                "Use f_min=0 and s3_calc='1/2' if you want a symmetric spectrum with negative "
+                "frequencies."
             )
 
         return self

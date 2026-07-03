@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable, Literal, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Any, Iterable, Literal, TypeAlias
+
+from pydantic import Field
 
 if TYPE_CHECKING:
     from multichss.configurators import DataConfig
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
 TimeUnits: TypeAlias = Literal["s", "ms", "us", "ns", "ps"]
 FrequencyUnits: TypeAlias = Literal["Hz", "kHz", "MHz", "GHz", "THz"]
 S3Calcs: TypeAlias = Literal["1/4", "1/2"]
-
+ChannelIndex = Annotated[int, Field(ge=0)]
 
 def data_config_dic(data_config_list: Iterable["DataConfig"]) -> dict[Any, "DataConfig"]:
     """Return a lookup mapping each data object to its DataConfig."""

@@ -23,8 +23,9 @@ class ThirdOrderCache:
     indices: Tensor
 
 
-def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderCache:
+def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderCache | None:
     """Precompute third-order index and work tensors for the active runtime configuration."""
+    
     return ThirdOrderCache(
         a_w3_init=a_w3_gen(
             runtime.s3_calc,
@@ -66,8 +67,7 @@ def compute_single_spectrum(
 
     if order == 1:
         coeffs = coeffs_by_channel[channels[0]]
-        a_w = coeffs[:, f_min_idx:f_max_idx, :]
-        single_spectrum = c1(runtime.use_full_fft, a_w)
+        single_spectrum = c1(runtime.use_full_fft, coeffs)
         norm = runtime.dt * single_window.mean() * single_window.shape[0]
 
     elif order == 2:
