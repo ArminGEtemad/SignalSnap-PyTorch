@@ -29,7 +29,7 @@ class RuntimeConfig:
     ----------
     selected_channels : tuple[int, ...]
         Data-channel indices used by the calculation.
-    spectra : tuple[tuple[int,...],...]
+    spectra_keys : tuple[tuple[int,...],...]
         Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
         or cross-correlation spectrum. Each tuple entry is a channel index.
     dt : float
@@ -71,7 +71,7 @@ class RuntimeConfig:
     """
 
     selected_channels: tuple[int, ...]
-    spectra: tuple[tuple[int, ...], ...]
+    spectra_keys: tuple[tuple[int, ...], ...]
     dt: float
     window_points: int
     m: int
@@ -138,7 +138,7 @@ def _validate_data_configs(
     return first_config.data.shape[0], first_config.dt, first_config.t_unit
 
 
-def _build_requested_spectra_channels(
+def _build_requested_spectra_keys_channels(
     selected_channels: tuple[int, ...],
     auto_spectra_orders: list[int],
     cross_spectra: (
@@ -167,13 +167,13 @@ def _build_requested_spectra_channels(
         represents one cross-correlation spectrum. Each tuple entry is a channel index.
     """
 
-    spectra: list[tuple[int, ...]] = []
+    spectra_keys: list[tuple[int, ...]] = []
 
     if auto_spectra_orders:
         for channel in selected_channels:
             for order in auto_spectra_orders:
                 channels = (channel,) * order
-                spectra.append(channels)
+                spectra_keys.append(channels)
 
     if cross_spectra is not None:
         for channels in cross_spectra:
@@ -185,9 +185,9 @@ def _build_requested_spectra_channels(
                     f"cross_spectra tuple {channels} contains channels that are not in "
                     f"selected_channels={selected_channels}: {invalid_channels}"
                 )
-            spectra.append(channels)
+            spectra_keys.append(channels)
 
-    return tuple(spectra)
+    return tuple(spectra_keys)
 
 
 def build_runtime_config(
@@ -240,7 +240,7 @@ def build_runtime_config(
         raise ValueError("Calculated window_points must be greater than zero.")
 
     # Resolve spectra from auto_spectra_orders and cross_spectra
-    spectra = _build_requested_spectra_channels(
+    spectra_keys = _build_requested_spectra_keys_channels(
         selected_channels, spectrum_config.auto_spectra_orders, spectrum_config.cross_spectra
     )
 
@@ -256,7 +256,7 @@ def build_runtime_config(
     else:
         m = spectrum_config.m
 
-    orders = set([len(channels) for channels in spectra])
+    orders = set([len(channels) for channels in spectra_keys])
     if m < max(orders):
         raise ValueError("Not enough data points")
 
@@ -307,7 +307,7 @@ def build_runtime_config(
 
     return RuntimeConfig(
         selected_channels=selected_channels,
-        spectra=spectra,
+        spectra_keys=spectra_keys,
         dt=dt,
         window_points=window_points,
         m=m,
@@ -344,7 +344,7 @@ def initialize_result_store(runtime: RuntimeConfig) -> SpectrumResultStore:
     """
 
     store = SpectrumResultStore()
-    for channels in runtime.spectra:
+    for channels in runtime.spectra_keys:
         store.add(SpectrumResult(channels))
     store.initialize_arrays(runtime)
     return store

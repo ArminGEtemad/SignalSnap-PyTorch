@@ -47,7 +47,7 @@ def calculate_spectra(
 
     third_order_cache = (
         build_third_order_cache(runtime)
-        if any(len(channels) == 3 for channels in runtime.spectra)
+        if any(len(channels) == 3 for channels in runtime.spectra_keys)
         else None
     )
 
@@ -60,7 +60,7 @@ def calculate_spectra(
             chunk = to_device(chunk, runtime)
             coeffs_by_channel[channel] = compute_fft(chunk, repeated_window, runtime)
 
-        for channels in runtime.spectra:
+        for channels in runtime.spectra_keys:
             spectrum = compute_single_spectrum(
                 channels=channels,
                 coeffs_by_channel=coeffs_by_channel,
