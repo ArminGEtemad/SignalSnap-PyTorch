@@ -13,25 +13,25 @@ from multichss.pipelines import calculate_spectra
 compare_error = False
 
 auto_keys = [
-    ((0,), 1),
-    ((0, 0), 2),
-    ((0, 0, 0), 3),
-    ((0, 0, 0, 0), 4),
-    ((1,), 1),
-    ((1, 1), 2),
-    ((1, 1, 1), 3),
-    ((1, 1, 1, 1), 4),
+    (0,),
+    (0, 0),
+    (0, 0, 0),
+    (0, 0, 0, 0),
+    (1,),
+    (1, 1),
+    (1, 1, 1),
+    (1, 1, 1, 1),
 ]
 cross_keys_ch24 = [
-    ((0, 1), 2),
-    ((1, 0), 2),
-    ((1, 0, 0, 1), 4),
-    ((1, 1, 0, 0), 4),
+    (0, 1),
+    (1, 0),
+    (1, 0, 0, 1),
+    (1, 1, 0, 0),
 ]
 cross_keys_ch3 = [
-    ((0, 1, 1), 3),
-    ((1, 0, 0), 3),
-    ((0, 0, 1), 3),
+    (0, 1, 1),
+    (1, 0, 0),
+    (0, 0, 1),
 ]
 
 
@@ -92,7 +92,8 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
     cross_corr_3 = []
     cross_corr_4 = []
     orders = []
-    for channel, order in keys:
+    for channel in keys:
+        order = len(channel)
         if order not in orders:
             orders.append(order)
         if order == 2:
@@ -147,8 +148,9 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
 
     result_store = calculate_spectra(sconfig, cconfig, dataconfig_list, selected=selected_data)
 
-    for channel, order in keys:
-        result = result_store.get(channel, order)
+    for channel in keys:
+        order = len(channel)
+        result = result_store.get(channel)
         assert old_spectra is not None
         assert result.spectrum is not None
 

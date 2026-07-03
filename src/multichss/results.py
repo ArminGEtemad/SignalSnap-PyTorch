@@ -28,13 +28,10 @@ class SpectrumResult:
 
     Attributes
     ----------
-    order : int
-        The order of the polyspectrum (e.g., 2 for power spectrum, 3 for bispectrum, 4 for
-        trispectrum).
     channels : tuple[int, ...]
-        The indices identifying which channels are part of this calculation. For example, `(0,)`
-        indicates an auto-spectrum on channel 0, while `(0, 1)` indicates a cross-spectrum between
-        channels 0 and 1.
+        The indices identifying which channels are part of this calculation. For example,
+        ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)`` indicates
+        a cross-spectrum between channels 0 and 1.
     freq : np.ndarray | None
         Frequency axis associated with the spectrum. For orders 1, 2, and 4 this is the selected
         frequency band. For third-order spectra with ``s3_calc="1/4"``, this is the nonnegative axis
@@ -71,7 +68,6 @@ class SpectrumResult:
         ``chunks_processed_unshifted``.
     """
 
-    order: int
     channels: tuple[int, ...]
 
     freq: np.ndarray | None = None
@@ -86,6 +82,10 @@ class SpectrumResult:
 
     chunks_processed_unshifted: int = 0
     chunks_processed_shifted: int = 0
+
+    @property
+    def order(self) -> int:
+        return len(self.channels)
 
     def reset_state(self):
         """Clears accumulators to prepare for a fresh calculation."""
@@ -121,36 +121,32 @@ class SpectrumResult:
 class SpectrumResultStore:
     """Container for all spectrum results produced by a calculation pipeline.
 
-    Stores one :class:`SpectrumResult` per channel tuple and spectrum order. Results are indexed by
-    ``(channels, order)``, where ``channels`` is a tuple of data-channel indices and ``order`` is
-    the polyspectrum order.
+    Stores one :class:`SpectrumResult` per channel tuple. Results are indexed by ``channels``, where
+    ``channels`` is a tuple of data-channel indices.
 
     This class owns collection-level bookkeeping only. Numerical accumulation, error estimation, and
     finalization are handled elsewhere.
 
     Attributes
     ----------
-    results : dict[tuple[tuple[int, ...], int], SpectrumResult]
-        Mapping from ``(channels, order)`` to the corresponding spectrum result. For example,
-        ``((0,), 2)`` identifies the second-order auto-spectrum of channel 0, while ``((0, 1), 2)``
+    results : dict[tuple[int, ...], SpectrumResult]
+        Mapping from ``channels`` to the corresponding spectrum result. For example,
+        ``(0, 0)`` identifies the second-order auto-spectrum of channel 0, while ``(0, 1)``
         identifies a second-order cross-spectrum between channels 0 and 1.
     """
 
-    results: dict[tuple[tuple[int, ...], int], SpectrumResult] = field(default_factory=dict)
+    results: dict[tuple[int, ...], SpectrumResult] = field(default_factory=dict)
 
-    def get(self, channels: tuple[int, ...], order: int) -> SpectrumResult:
-        """Return the result for a channel tuple and spectrum order."""
-
-        return self.results[(channels, order)]
+    def get(self, channels: tuple[int, ...]) -> SpectrumResult:
+        """Return the result for a channel tuple."""
+        return self.results[channels]
 
     def add(self, result: SpectrumResult) -> None:
-        """Add or replace a spectrum result using its channels and order."""
-
-        self.results[(result.channels, result.order)] = result
+        """Add or replace a spectrum result using its channels."""
+        self.results[result.channels] = result
 
     def reset_all_states(self) -> None:
         """Reset the mutable calculation state of all stored results."""
-
         for result in self.results.values():
             result.reset_state()
 

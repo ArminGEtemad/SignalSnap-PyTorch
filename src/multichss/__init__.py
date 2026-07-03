@@ -11,7 +11,6 @@ from .configurators import CrossConfig, DataConfig, PlotConfig, SpectrumConfig
 from .pipelines import calculate_spectra
 from .planning import (
     RuntimeConfig,
-    SpectrumTask,
     build_runtime_config,
     build_spectrum_tasks,
     initialize_result_store,
@@ -33,7 +32,6 @@ __all__ = [
     "SpectrumConfig",
     "SpectrumResult",
     "SpectrumResultStore",
-    "SpectrumTask",
     "TimeUnits",
     "build_runtime_config",
     "build_spectrum_tasks",

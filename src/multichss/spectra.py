@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 
 from .cumulants import a_w3_gen, c1, c2, c3, c4, calc_a_w3, index_generation_to_aw_3
-from .planning import RuntimeConfig, SpectrumTask
+from .planning import RuntimeConfig
 
 
 @dataclass(slots=True)
@@ -38,13 +38,13 @@ def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderCache:
 
 
 def compute_single_spectrum(
-    task: SpectrumTask,
+    channels: tuple[int, ...],
     coeffs_by_channel: dict[int, Tensor],
     single_window: Tensor,
     runtime: RuntimeConfig,
     third_order_cache: ThirdOrderCache | None = None,
 ) -> Tensor:
-    """Compute one normalized spectrum for a single task from channel Fourier coefficients.
+    """Compute one normalized spectrum from channel Fourier coefficients.
 
     Dispatches to the cumulant implementation for orders 1 through 4 and applies the matching window
     normalization.
@@ -60,15 +60,9 @@ def compute_single_spectrum(
 
     Third-order shapes assume the calculation starts at ``runtime.f_min_idx == 0``.
     """
-    order = task.order
-    channels = task.channels
+    order = len(channels)
     f_min_idx = runtime.f_min_idx
     f_max_idx = runtime.f_max_idx
-
-    if len(channels) != order:
-        raise ValueError(
-            f"Number of selected channels ({len(channels)}) does not match order ({order})"
-        )
 
     if order == 1:
         coeffs = coeffs_by_channel[channels[0]]

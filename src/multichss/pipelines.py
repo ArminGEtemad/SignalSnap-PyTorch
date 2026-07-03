@@ -40,7 +40,7 @@ def calculate_spectra(
     Returns
     -------
     SpectrumResultStore
-        Finalized spectra indexed by ``(channels, order)``.
+        Finalized spectra indexed by ``channels``.
     """
     runtime_config = build_runtime_config(
         spectrum_config=spectrum_config, data_config_list=data_config_list, selected=selected
@@ -61,15 +61,15 @@ def calculate_spectra(
             chunk = to_device(chunk, runtime_config)
             coeffs_by_channel[channel] = compute_fft(chunk, repeated_window, runtime_config)
 
-        for task in tasks:
+        for channels in tasks:
             spectrum = compute_single_spectrum(
-                task=task,
+                channels=channels,
                 coeffs_by_channel=coeffs_by_channel,
                 single_window=single_window,
                 runtime=runtime_config,
                 third_order_cache=third_order_cache,
             )
-            result = result_store.get(task.channels, task.order)
+            result = result_store.get(channels)
             accumulate_spectrum(result, spectrum, shifted=shifted)
 
     for result in result_store.results.values():

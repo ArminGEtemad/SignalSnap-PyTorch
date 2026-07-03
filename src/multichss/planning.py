@@ -89,29 +89,6 @@ class RuntimeConfig:
     old_window: bool
 
 
-@dataclass(frozen=True, slots=True)
-class SpectrumTask:
-    """Description of one spectrum that should be calculated.
-
-    A task is the normalized representation of a user request after :class:`SpectrumConfig` and
-    :class:`CrossConfig` have been expanded. It identifies one polyspectrum order and the channel
-    tuple that should be used for that calculation.
-
-    Parameters
-    ----------
-    order : int
-        The polyspectrum order to calculate.
-    channels : tuple[int, ...]
-        The channel indices used by this calculation. Auto-spectra repeat the same channel once per
-        order, e.g. ``(0, 0)`` for the second-order spectrum of channel 0 and ``(0, 0, 0)`` for the
-        third-order spectrum. Cross-spectra are represented by the configured channel tuple, e.g.
-        ``(0, 1)`` for a second-order cross-spectrum.
-    """
-
-    order: int
-    channels: tuple[int, ...]
-
-
 def _normalize_selected(
     data_config_list: list[DataConfig], selected: list[int] | None = None
 ) -> tuple[int, ...]:
@@ -296,7 +273,7 @@ def build_runtime_config(
 
 def build_spectrum_tasks(
     runtime_config: RuntimeConfig, cross_config: CrossConfig
-) -> list[SpectrumTask]:
+) -> list[tuple[int, ...]]:
     """Build the concrete spectrum tasks requested by the configuration.
 
     Expands the high-level configuration into one :class:`SpectrumTask` per spectrum that should be
@@ -313,17 +290,17 @@ def build_spectrum_tasks(
 
     Returns
     -------
-    list[:class:`SpectrumTask`]
+    list[tuple[int, ...]]
         Ordered list of concrete spectrum calculations to perform.
     """
 
-    tasks: list[SpectrumTask] = []
+    tasks: list[tuple[int,...]] = []
 
     if cross_config.auto_corr:
         for channel in runtime_config.selected_channels:
             for order in runtime_config.orders:
                 channels = (channel,) * order
-                tasks.append(SpectrumTask(order=order, channels=channels))
+                tasks.append(channels)
 
     cross_specs = {
         2: cross_config.cross_corr_2 or [],
@@ -335,14 +312,13 @@ def build_spectrum_tasks(
         if order not in runtime_config.orders:
             continue
         for channels in channel_groups:
-            channels = tuple(channels)
             for channel in channels:
                 if channel not in runtime_config.selected_channels:
                     raise ValueError(
                         f"Cross spectrum {channels} references channel {channel}, "
                         f"which is not in selected channels {runtime_config.selected_channels}."
                     )
-            tasks.append(SpectrumTask(channels=channels, order=order))
+            tasks.append(channels)
 
     if not tasks:
         raise ValueError(
@@ -350,23 +326,22 @@ def build_spectrum_tasks(
             "spectra are not matching the specified orders in SpectrumConfig."
         )
 
-    task_keys = [(task.channels, task.order) for task in tasks]
-    if len(task_keys) != len(set(task_keys)):
+    if len(tasks) != len(set(tasks)):
         raise ValueError("Duplicate spectrum tasks were requested.")
 
     return tasks
 
 
 def initialize_result_store(
-    tasks: list[SpectrumTask], runtime: RuntimeConfig
+    tasks: list[tuple[int, ...]], runtime: RuntimeConfig
 ) -> SpectrumResultStore:
     """Create an initialized result store for a list of spectrum tasks.
 
-    Each task is converted into a :class:`SpectrumResult` with matching order and channels.
+    Each task is converted into a :class:`SpectrumResult` with matching channels.
 
     Parameters
     ----------
-    tasks : list[:class:`SpectrumTask`]
+    tasks : list[tuple[int, ...]]
         Spectrum tasks that should receive corresponding result containers.
     runtime : :class:`RuntimeConfig`
         :class:`RuntimeConfig` that contains all necessary information to initialize result arrays.
@@ -378,7 +353,7 @@ def initialize_result_store(
     """
 
     store = SpectrumResultStore()
-    for task in tasks:
-        store.add(SpectrumResult(order=task.order, channels=task.channels))
+    for channels in tasks:
+        store.add(SpectrumResult(channels))
     store.initialize_arrays(runtime)
     return store

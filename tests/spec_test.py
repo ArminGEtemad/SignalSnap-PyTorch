@@ -29,7 +29,7 @@ def test_c1_returns_correct_mean():
 
     # Run the spectrum calculator
     result_store = calculate_spectra(sconfig, cconfig, [config1], selected_data)
-    result = result_store.get((0,), 1)
+    result = result_store.get((0,))
 
     assert result.spectrum is not None
 
