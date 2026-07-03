@@ -15,20 +15,20 @@ from multichss.planning import build_runtime_config
         "frequency_points",
         "f_max",
         "m",
-        "expected_yielded_estimates",
+        "expected_unshifted_estimates",
         "expected_m",
     ),
     [
-        pytest.param(80, None, [1, 2], 9, 0.5, 4, 2, 4, id="uncapped"),
+        pytest.param(80, None, [1, 2], 9, 0.5, 4, 1, 4, id="uncapped"),
         pytest.param(80, 1, [1, 2], 9, 0.5, 4, 1, 4, id="capped-below-available"),
         pytest.param(128, 2, [1, 2], 9, 0.5, 4, 2, 4, id="cap-below-boundary"),
-        pytest.param(136, 10, [1, 2], 9, 0.5, 4, 4, 4, id="cap-above-available"),
-        pytest.param(136, 4, [1, 2], 9, 0.5, 4, 4, 4, id="cap-equals-available"),
-        pytest.param(127, None, [1, 2], 9, 0.5, 4, 2, 4, id="one-before-next-base"),
-        pytest.param(64, None, [1, 2], 9, 0.5, 4, 2, 3, id="m-reduced-at-short-boundary"),
+        pytest.param(136, 10, [1, 2], 9, 0.5, 4, 2, 4, id="cap-above-available"),
+        pytest.param(136, 4, [1, 2], 9, 0.5, 4, 2, 4, id="cap-equals-available"),
+        pytest.param(127, None, [1, 2], 9, 0.5, 4, 1, 4, id="one-before-next-base"),
+        pytest.param(64, None, [1, 2], 9, 0.5, 4, 1, 3, id="m-reduced-at-short-boundary"),
         pytest.param(256, 3, [1, 2, 3, 4], 9, 0.5, 4, 3, 4, id="higher-orders-capped"),
-        pytest.param(96, None, [1, 2], 6, 1 / 3, 3, 3, 3, id="odd-window-before-half-shift"),
-        pytest.param(97, None, [1, 2], 6, 1 / 3, 3, 4, 3, id="odd-window-at-half-shift"),
+        pytest.param(96, None, [1, 2], 6, 1 / 3, 3, 2, 3, id="odd-window-before-half-shift"),
+        pytest.param(97, None, [1, 2], 6, 1 / 3, 3, 2, 3, id="odd-window-at-half-shift"),
     ],
 )
 def test_spectral_estimates_in_runtime_config(
@@ -38,7 +38,7 @@ def test_spectral_estimates_in_runtime_config(
     frequency_points,
     f_max,
     m,
-    expected_yielded_estimates,
+    expected_unshifted_estimates,
     expected_m,
 ):
     spectrum_config = SpectrumConfig(
@@ -52,11 +52,9 @@ def test_spectral_estimates_in_runtime_config(
     data_config = DataConfig(data=np.ones(n_data_points), dt=1.0)
 
     runtime = build_runtime_config(spectrum_config, [data_config])
-    yielded_estimates = len(list(iter_window_slices(runtime)))
 
     assert runtime.m == expected_m
-    assert yielded_estimates == expected_yielded_estimates
-    assert yielded_estimates == runtime.spectral_estimates
+    assert runtime.spectral_estimates == expected_unshifted_estimates
 
 
 @pytest.mark.parametrize(
@@ -65,7 +63,7 @@ def test_spectral_estimates_in_runtime_config(
         pytest.param(
             True,
             [(0, 64, False), (64, 128, False), (8, 72, True), (72, 136, True)],
-            4,
+            2,
             id="interlacing-enabled",
         ),
         pytest.param(
@@ -109,19 +107,19 @@ def test_pipeline_processes_runtime_spectral_estimates():
         spectral_estimates_max=3,
     )
     cross_config = CrossConfig(auto_corr=True)
-    data_config = DataConfig(data=np.ones(128), dt=1.0)
+    data_config = DataConfig(data=np.ones(256), dt=1.0)
 
     runtime = build_runtime_config(spectrum_config, [data_config])
     result_store = calculate_spectra(spectrum_config, cross_config, [data_config])
 
     assert runtime.spectral_estimates == 3
-    
+
     for result in result_store.results.values():
-        assert result.chunks_processed_unshifted == 2
-        assert result.chunks_processed_shifted == 1
+        assert result.chunks_processed_unshifted == 3
+        assert result.chunks_processed_shifted == 3
         assert (
             result.chunks_processed_shifted + result.chunks_processed_unshifted
-            == runtime.spectral_estimates
+            == 2 * runtime.spectral_estimates
         )
 
 
