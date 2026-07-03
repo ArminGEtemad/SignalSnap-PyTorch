@@ -276,7 +276,7 @@ def build_spectrum_tasks(
 ) -> list[tuple[int, ...]]:
     """Build the concrete spectrum tasks requested by the configuration.
 
-    Expands the high-level configuration into one :class:`SpectrumTask` per spectrum that should be
+    Expands the high-level configuration into one channel tuple per spectrum that should be
     calculated. Auto-correlation tasks are generated for each selected channel when
     ``cross_config.auto_corr`` is enabled. Cross tasks are generated from ``cross_corr_2``,
     ``cross_corr_3``, and ``cross_corr_4`` when their corresponding orders are requested.
@@ -327,7 +327,7 @@ def build_spectrum_tasks(
         )
 
     if len(tasks) != len(set(tasks)):
-        raise ValueError("Duplicate spectrum tasks were requested.")
+        raise ValueError("Duplicate spectra were requested.")
 
     return tasks
 
