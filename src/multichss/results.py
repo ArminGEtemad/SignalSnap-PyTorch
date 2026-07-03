@@ -17,7 +17,6 @@ from .utils import FrequencyUnits
 
 if TYPE_CHECKING:
     from .planning import RuntimeConfig
-    
 
 
 @dataclass(slots=True)
@@ -30,16 +29,16 @@ class SpectrumResult:
     Attributes
     ----------
     order : int
-        The order of the polyspectrum (e.g., 2 for power spectrum, 3 for bispectrum, 4 for 
+        The order of the polyspectrum (e.g., 2 for power spectrum, 3 for bispectrum, 4 for
         trispectrum).
     channels : tuple[int, ...]
         The indices identifying which channels are part of this calculation. For example, `(0,)`
-        indicates an auto-spectrum on channel 0, while `(0, 1)` indicates a cross-spectrum between 
+        indicates an auto-spectrum on channel 0, while `(0, 1)` indicates a cross-spectrum between
         channels 0 and 1.
     freq : np.ndarray | None
         Frequency axis associated with the spectrum. For orders 1, 2, and 4 this is the selected
         frequency band. For third-order spectra with ``s3_calc="1/4"``, this is the nonnegative axis
-        used for both dimensions. For ``s3_calc="1/2"``, this is the mirrored x-axis; the 
+        used for both dimensions. For ``s3_calc="1/2"``, this is the mirrored x-axis; the
         nonnegative y-axis is obtained as ``freq[freq.size // 2:]``.
     freq_unit : Literal["Hz", "kHz", "MHz", "GHz", "THz"]
         Unit of the frequency axis.
@@ -47,7 +46,9 @@ class SpectrumResult:
         The final normalized spectral values transferred back to the CPU.
     spectrum_error : np.ndarray | None
         The final calculated standard error of the mean (SEM) values transferred back to the CPU. If
-        interlacing was enabled, this is the maximum of the unshifted and shifted spectrum error.
+        interlacing was enabled, this is the maximum of the unshifted and shifted spectrum error. If
+        only one shifted spectral estimate is available, ``spectrum_error`` is based on the
+        unshifted estimates alone.
     spectrum_accumulator_unshifted : torch.Tensor | None
         Running total accumulation buffer of the unshifted calculated spectra on the active torch
         device.
@@ -56,16 +57,18 @@ class SpectrumResult:
         device. Only used when interlacing is enabled.
     error_accumulator_x_squared_unshifted : torch.Tensor | None
         Running total accumulation buffer of the real and imaginary parts of the unshifted spectra
-        squared on the active torch device.
+        squared on the active torch device. Real and imaginary parts are squared separately.
     error_accumulator_x_squared_shifted : torch.Tensor | None
         Running total accumulation buffer of the real and imaginary parts of the shifted spectra
-        squared on the active torch device. Only used when interlacing is enabled.
+        squared on the active torch device. Real and imaginary parts are squared separately. Only
+        used when interlacing is enabled.
     chunks_processed_unshifted : int
         The total number of individual unshifted spectral estimates integrated into
-        `spectrum_accumulator_unshifted`.
+        ``spectrum_accumulator_unshifted``.
     chunks_processed_shifted : int
         The total number of individual shifted spectral estimates integrated into
-        `spectrum_accumulator_shifted`.
+        ``spectrum_accumulator_shifted``. When interlacing is enabled, this count never exceeds
+        ``chunks_processed_unshifted``.
     """
 
     order: int

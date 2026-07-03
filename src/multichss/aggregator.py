@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 from torch import Tensor
 
@@ -61,104 +60,107 @@ def accumulate_spectrum(
 
         result.chunks_processed_shifted += 1
 
+def _check_result_group(
+    spectrum_accumulator: Tensor | None,
+    error_accumulator_x_squared: Tensor | None,
+    chunks_processed: int,
+) -> tuple[Tensor, Tensor, int] | None:
+    if spectrum_accumulator is None:
+        return None
+
+    if error_accumulator_x_squared is None or chunks_processed == 0:
+        raise RuntimeError("A spectrum result state is inconsistent.")
+
+    return spectrum_accumulator, error_accumulator_x_squared, chunks_processed
+
+
+def _finalize_result_group(
+    spectrum_accumulator: Tensor,
+    error_accumulator_x_squared: Tensor,
+    chunks_processed: int,
+) -> tuple[Tensor, Tensor | None]:
+    """
+    Compute spectrum mean and error for each specified group, e.g. for shifted and unshifted data.
+    """
+    mean = spectrum_accumulator / chunks_processed
+
+    if chunks_processed < 2:
+        return mean, None
+
+    mean_squared = error_accumulator_x_squared / chunks_processed
+    variance = (chunks_processed / (chunks_processed - 1)) * (
+        mean_squared
+        - torch.complex(
+            torch.square(mean.real),
+            torch.square(mean.imag),
+        )
+    )
+
+    var_re = torch.clamp_min(variance.real, 0.0)
+    var_im = torch.clamp_min(variance.imag, 0.0)
+
+    error = torch.complex(
+        torch.sqrt(var_re / chunks_processed),
+        torch.sqrt(var_im / chunks_processed),
+    )
+
+    return mean, error
+
 
 def finalize_result(result: SpectrumResult) -> None:
     """Finalize accumulated spectra and error estimates on a result object."""
 
-    if result.spectrum_accumulator_unshifted is None:
+    unshifted_group = _check_result_group(
+        result.spectrum_accumulator_unshifted,
+        result.error_accumulator_x_squared_unshifted,
+        result.chunks_processed_unshifted,
+    )
+
+    if unshifted_group is None:
         result.spectrum = None
         result.spectrum_error = None
         return
 
-    if result.chunks_processed_unshifted == 0:
-        raise ValueError("Cannot finalize result without processed chunks.")
+    groups = [unshifted_group]
 
-    # Finalize Spectrum
-    if result.spectrum_accumulator_shifted is None:
-        result.spectrum_accumulator_unshifted /= result.chunks_processed_unshifted
-        result.spectrum = result.spectrum_accumulator_unshifted.cpu().resolve_conj().numpy()
-    else:
-        unified_spectrum = (
-            result.spectrum_accumulator_unshifted + result.spectrum_accumulator_shifted
-        ) / (result.chunks_processed_unshifted + result.chunks_processed_shifted)
-        result.spectrum = unified_spectrum.cpu().resolve_conj().numpy()
+    shifted_group = _check_result_group(
+        result.spectrum_accumulator_shifted,
+        result.error_accumulator_x_squared_shifted,
+        result.chunks_processed_shifted,
+    )
+    if shifted_group is not None:
+        groups.append(shifted_group)
 
-        result.spectrum_accumulator_unshifted /= result.chunks_processed_unshifted
-        result.spectrum_accumulator_shifted /= result.chunks_processed_shifted
+    total_chunks = 0
+    total_spectrum = groups[0][0].clone().zero_()
 
+    errors: list[Tensor] = []
 
-    # Finalize Error
-    assert result.error_accumulator_x_squared_unshifted is not None
+    for spectrum_sum, squared_sum, chunks_processed in groups:
+        total_spectrum += spectrum_sum
+        total_chunks += chunks_processed
 
-    if result.chunks_processed_unshifted == 1:
+        _, error = _finalize_result_group(
+            spectrum_accumulator=spectrum_sum,
+            error_accumulator_x_squared=squared_sum,
+            chunks_processed=chunks_processed,
+        )
+        if error is not None:
+            errors.append(error)
+
+    result.spectrum = (total_spectrum / total_chunks).cpu().resolve_conj().numpy()
+
+    if not errors:
         result.spectrum_error = None
-        print("Need at least two unshifted spectra estimates for an error estimation.")
+        print("Need at least two spectral estimates for an error estimation.")
+    elif len(errors) == 1:
+        result.spectrum_error = errors[0].cpu().resolve_conj().numpy()
     else:
-        # Unshifted error
-        var_factor_unshifted = result.chunks_processed_unshifted / (
-            result.chunks_processed_unshifted - 1
-        )
-        result.error_accumulator_x_squared_unshifted /= result.chunks_processed_unshifted
-        spectrum_variance_unshifted = var_factor_unshifted * (
-            result.error_accumulator_x_squared_unshifted
-            - torch.complex(
-                torch.square(result.spectrum_accumulator_unshifted.real),
-                torch.square(result.spectrum_accumulator_unshifted.imag),
-            )
-        )
-        var_re_unshifted = torch.clamp_min(spectrum_variance_unshifted.real, 0.0)
-        var_im_unshifted = torch.clamp_min(spectrum_variance_unshifted.imag, 0.0)
+        error_re = errors[0].real
+        error_im = errors[0].imag
 
-        spectrum_error_unshifted = (
-            torch.complex(
-                torch.sqrt(var_re_unshifted / result.chunks_processed_unshifted),
-                torch.sqrt(var_im_unshifted / result.chunks_processed_unshifted),
-            )
-            .cpu()
-            .resolve_conj()
-            .numpy()
-        )
-        if result.chunks_processed_shifted >= 2:
-            # Shifted error
-            assert result.error_accumulator_x_squared_shifted is not None
-            assert result.spectrum_accumulator_shifted is not None
+        for error in errors[1:]:
+            error_re = torch.maximum(error_re, error.real)
+            error_im = torch.maximum(error_im, error.imag)
 
-            var_factor_shifted = result.chunks_processed_shifted / (
-                result.chunks_processed_shifted - 1
-            )
-            result.error_accumulator_x_squared_shifted /= result.chunks_processed_shifted
-            spectrum_variance_shifted = var_factor_shifted * (
-                result.error_accumulator_x_squared_shifted
-                - torch.complex(
-                    torch.square(result.spectrum_accumulator_shifted.real),
-                    torch.square(result.spectrum_accumulator_shifted.imag),
-                )
-            )
-            var_re_shifted = torch.clamp_min(spectrum_variance_shifted.real, 0.0)
-            var_im_shifted = torch.clamp_min(spectrum_variance_shifted.imag, 0.0)
-
-            spectrum_error_shifted = (
-                torch.complex(
-                    torch.sqrt(var_re_shifted / result.chunks_processed_shifted),
-                    torch.sqrt(var_im_shifted / result.chunks_processed_shifted),
-                )
-                .cpu()
-                .resolve_conj()
-                .numpy()
-            )
-
-            error_re = np.maximum(
-                np.real(spectrum_error_unshifted), np.real(spectrum_error_shifted)
-            )
-            error_im = np.maximum(
-                np.imag(spectrum_error_unshifted), np.imag(spectrum_error_shifted)
-            )
-            result.spectrum_error = error_re + 1j * error_im
-        else:
-            # Unshifted error
-            if result.chunks_processed_shifted == 1:
-                print(
-                    "Only using spectrum error from the unshifted spectral estimates, since there"
-                    "is only a single shifted estimate."
-                )
-            result.spectrum_error = spectrum_error_unshifted
+        result.spectrum_error = torch.complex(error_re, error_im).cpu().resolve_conj().numpy()
