@@ -25,7 +25,7 @@ from multichss.planning import build_runtime_config
         pytest.param(136, 10, [1, 2], 9, 0.5, 4, 2, 4, id="cap-above-available"),
         pytest.param(136, 4, [1, 2], 9, 0.5, 4, 2, 4, id="cap-equals-available"),
         pytest.param(127, None, [1, 2], 9, 0.5, 4, 1, 4, id="one-before-next-base"),
-        pytest.param(64, None, [1, 2], 9, 0.5, 4, 1, 3, id="m-reduced-at-short-boundary"),
+        pytest.param(63, None, [1, 2], 9, 0.5, 4, 1, 3, id="m-reduced-at-short-boundary"),
         pytest.param(256, 3, [1, 2, 3, 4], 9, 0.5, 4, 3, 4, id="higher-orders-capped"),
         pytest.param(96, None, [1, 2], 6, 1 / 3, 3, 2, 3, id="odd-window-before-half-shift"),
         pytest.param(97, None, [1, 2], 6, 1 / 3, 3, 2, 3, id="odd-window-at-half-shift"),
@@ -147,3 +147,35 @@ def test_pipeline_processes_runtime_spectral_estimates_without_interlacing():
             result.chunks_processed_shifted + result.chunks_processed_unshifted
             == runtime.spectral_estimates
         )
+
+def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
+    spectrum_config = SpectrumConfig(
+        f_min=0.0,
+        f_max=0.5,
+        frequency_points=9,
+        orders=[1, 2],
+        m=4,
+        interlacing=False,
+        spectral_estimates_max=None,
+    )
+    data_config = DataConfig(data=np.ones(64), dt=1.0)
+
+    runtime = build_runtime_config(spectrum_config, [data_config])
+
+    assert runtime.m == 4
+    assert runtime.spectral_estimates == 1
+
+def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
+    spectrum_config = SpectrumConfig(
+        f_min=0.0,
+        f_max=0.5,
+        frequency_points=9,
+        orders=[1, 2],
+        m=4,
+        interlacing=True,
+        spectral_estimates_max=None,
+    )
+    data_config = DataConfig(data=np.ones(64), dt=1.0)
+
+    with pytest.raises(ValueError, match="Interlacing was requested"):
+        build_runtime_config(spectrum_config, [data_config])

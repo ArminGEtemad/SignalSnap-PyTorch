@@ -214,9 +214,10 @@ def build_runtime_config(
 
     # Check if enough data is available and try to lower the window count per cumulant/spectrum
     # estimate if needed
-    required_points = window_points * spectrum_config.m + window_points // 2
-    if not required_points < n_data_points:
-        m = (n_data_points - window_points // 2) // window_points
+    required_points = window_points * spectrum_config.m
+
+    if required_points > n_data_points:
+        m = n_data_points // window_points
         if m < max(orders):
             raise ValueError("Not enough data points")
         print(
@@ -260,6 +261,16 @@ def build_runtime_config(
         spectral_estimates = unshifted_estimates
     else:
         spectral_estimates = min(spectrum_config.spectral_estimates_max, unshifted_estimates)
+
+    # raise ValueError, if not a single shifted spectral estimate can be calculated when interlacing
+    # is enabled.
+    if spectrum_config.interlacing:
+        shifted_estimates = (n_data_points - window_points // 2) // chunk_size
+        if shifted_estimates < 1:
+            raise ValueError(
+                "Interlacing was requested, but the data is too short for a shifted spectral "
+                "estimate. Disable interlacing or provide more data."
+            )
 
     return RuntimeConfig(
         selected_channels=selected_channels,
