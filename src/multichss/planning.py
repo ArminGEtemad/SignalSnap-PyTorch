@@ -60,7 +60,7 @@ class RuntimeConfig:
         Number of unshifted spectral estimates processed by the base calculation. If
         ``interlacing=True``, up to the same number of additional shifted estimates are calculated
         when enough data is available.
-    interlacing : bool = True
+    interlacing : bool
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
         window edges.

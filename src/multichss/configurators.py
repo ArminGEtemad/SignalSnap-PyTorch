@@ -206,10 +206,12 @@ class SpectrumConfig(BaseModel):
         device is ``mps`` and ``double`` otherwise.
     spectral_estimates_max : int | None = int(1e6)
         Maximum number of unshifted spectral estimates. If ``None``, as many estimates as possible
-        are calculated based on the data. If ``interlacing=True``, up to the same number of
-        additional shifted estimates are calculated. The true number of spectral estimates may be
-        lower if the data does not have enough samples. Must be positive.
-    interlacing : bool = True
+        are calculated based on the data. The true number of spectral estimates may be lower if the
+        data does not have enough samples. If ``interlacing=True``, up to the same number of
+        additional shifted estimates are calculated. The number of shifted estimates may also be one
+        less than the number of unshifted estimates if the final shifted windows do not fit. Must be
+        positive.
+    interlacing : bool = False
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
         window edges. Error estimates are calculated separately for unshifted and shifted spectra;
@@ -232,7 +234,7 @@ class SpectrumConfig(BaseModel):
     device: Literal["cpu", "mps", "cuda"] = "cpu"
     precision: Literal["auto", "single", "double"] = "auto"
     spectral_estimates_max: Annotated[int, Field(gt=0)] | None = int(1e6)
-    interlacing: bool = True
+    interlacing: bool = False
     old_window: bool = False
 
     @property

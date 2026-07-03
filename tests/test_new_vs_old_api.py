@@ -110,6 +110,7 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             device="cpu",
             orders=orders,
             frequency_points=100,
+            interlacing=True,
             old_window=True,
         )
         cconfig = CrossConfig(auto_corr=True)
@@ -121,6 +122,7 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             device="cpu",
             orders=orders,
             frequency_points=100,
+            interlacing=True,
             old_window=True,
         )
         cconfig = CrossConfig(
@@ -136,6 +138,7 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             device="cpu",
             orders=orders,
             frequency_points=100,
+            interlacing=True,
             old_window=True,
         )
         cconfig = CrossConfig(auto_corr=False, cross_corr_3=cross_corr_3)

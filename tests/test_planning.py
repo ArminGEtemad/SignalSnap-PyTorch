@@ -105,6 +105,7 @@ def test_pipeline_processes_runtime_spectral_estimates():
         orders=[1, 2],
         m=4,
         spectral_estimates_max=3,
+        interlacing=True,
     )
     cross_config = CrossConfig(auto_corr=True)
     data_config = DataConfig(data=np.ones(256), dt=1.0)
@@ -148,6 +149,7 @@ def test_pipeline_processes_runtime_spectral_estimates_without_interlacing():
             == runtime.spectral_estimates
         )
 
+
 def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
@@ -165,6 +167,7 @@ def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
     assert runtime.m == 4
     assert runtime.spectral_estimates == 1
 
+
 def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
@@ -179,3 +182,7 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
 
     with pytest.raises(ValueError, match="Interlacing was requested"):
         build_runtime_config(spectrum_config, [data_config])
+
+
+def test_spectrum_config_defaults_to_no_interlacing():
+    assert SpectrumConfig().interlacing is False
