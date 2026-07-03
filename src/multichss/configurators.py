@@ -67,7 +67,7 @@ class DataConfig(BaseModel):
     :class:`~multichss.planning.RuntimeConfig`.
 
     Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
-    used to determine the number of data points (``window_points``) used for each Fourier 
+    used to determine the number of data points (``window_points``) used for each Fourier
     transform::
 
         window_points = 1 / (dt * df)
@@ -131,7 +131,7 @@ class PlotConfig(BaseModel):
     output_folder : DirectoryPath
         Destination folder used when ``output="save"``.
     """
-    
+
     model_config = SHARED_CONFIG
 
     f_min: float
@@ -187,7 +187,8 @@ class SpectrumConfig(BaseModel):
     f_min : float = 0.0
         Lower frequency bound. If omitted, zero is used.
     f_max : float | None = None
-        Upper frequency bound. If omitted, the maximal allowed frequency is used.
+        Upper frequency bound. If omitted, the Nyquist frequency based on :class:`DataConfig`'s
+        ``dt`` is used.
     frequency_points : int = 100
         Number of frequency points in the specified frequency range. Must be positive.
     orders : Literal["all"] | list[int] = "all"
@@ -204,16 +205,14 @@ class SpectrumConfig(BaseModel):
         ``double`` will result in ``float64`` and ``complex128``. ``auto`` will choose ``single`` if
         device is ``mps`` and ``double`` otherwise.
     spectral_estimates_max : int | None = int(1e6)
-        Maximum number of spectral estimates. If ``None``, as many estimates as possible are
-        calculated based on the data. If ``interlacing = True``, the first half of the spectral
-        estimates will be computed on unshifted data and the second half using shifted data. If
-        ``spectral_estimates_max`` is odd, there will be one more unshifted than shifted spectrum.
-        The true number of spectral estimates may be lower if the data does not have enough samples.
-        Must be positive.
+        Maximum number of unshifted spectral estimates. If ``None``, as many estimates as possible
+        are calculated based on the data. If ``interlacing=True``, up to the same number of
+        additional shifted estimates are calculated. The true number of spectral estimates may be
+        lower if the data does not have enough samples. Must be positive.
     interlacing : bool = True
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
-        window edges. Error estimates are calculated separately for unshifted and shifted spectra; 
+        window edges. Error estimates are calculated separately for unshifted and shifted spectra;
         when both are available, the reported error is the component-wise maximum of both estimates.
     old_window : bool = False
         Compatibility option. If set to ``True``, the approximated confined Gaussian window from

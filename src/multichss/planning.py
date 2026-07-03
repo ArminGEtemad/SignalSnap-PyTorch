@@ -57,8 +57,9 @@ class RuntimeConfig:
     s3_calc : Literal["1/4", "1/2"]
         Method used for third-order spectrum calculation.
     spectral_estimates: int
-        Number of spectral estimates that will be yielded by ``iter_window_slices`` and processed by
-        the pipeline.
+        Number of unshifted spectral estimates processed by the base calculation. If
+        ``interlacing=True``, up to the same number of additional shifted estimates are calculated
+        when enough data is available.
     interlacing : bool = True
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
@@ -253,19 +254,12 @@ def build_runtime_config(
 
     # Determine the number of spectral estimates
     chunk_size = m * window_points
-    half_shift = window_points // 2
-
     unshifted_estimates = n_data_points // chunk_size
-    shifted_estimates = (
-        max(0, (n_data_points - half_shift) // chunk_size) if spectrum_config.interlacing else 0
-    )
-
-    available_estimates = unshifted_estimates + shifted_estimates
 
     if spectrum_config.spectral_estimates_max is None:
-        spectral_estimates = available_estimates
+        spectral_estimates = unshifted_estimates
     else:
-        spectral_estimates = min(spectrum_config.spectral_estimates_max, available_estimates)
+        spectral_estimates = min(spectrum_config.spectral_estimates_max, unshifted_estimates)
 
     return RuntimeConfig(
         selected_channels=selected_channels,
