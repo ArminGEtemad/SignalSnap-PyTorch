@@ -12,7 +12,7 @@ from multichss.pipelines import calculate_spectra
 # term error which is different from what is currently implemented in the new api
 compare_error = False
 
-auto_orders = [1, 2, 3, 4]
+auto_keys = [(0,), (0, 0), (0, 0, 0), (0, 0, 0, 0), (1,), (1, 1), (1, 1, 1), (1, 1, 1, 1)]
 cross_keys_ch24 = [
     (0, 1),
     (1, 0),
@@ -36,16 +36,16 @@ def prepared_data():
     return [
         DataConfig(data=X_test[:1000, :, 0].reshape(-1), dt=2.0, t_unit="ns"),
         DataConfig(data=X_test[:1000, :, 1].reshape(-1), dt=2.0, t_unit="ns"),
-    ], [0, 1]
+    ]
 
 
 @pytest.mark.parametrize(
-    ("name", "reference_file", "keys_or_orders"),
+    ("name", "reference_file", "keys"),
     [
         pytest.param(
             "auto",
             "./tests/test_data/references/5Qubit_short_data_auto_corr.npz",
-            auto_orders,
+            auto_keys,
             id="auto",
         ),
         pytest.param(
@@ -62,13 +62,13 @@ def prepared_data():
         ),
     ],
 )
-def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
+def test_new_vs_old_api(name, reference_file, keys, prepared_data):
     """
     Tests if the refactor implements the same calculations. To check if the
     implementation is correct, the old window function needs to be used in
     SpectrumConfig.
     """
-    dataconfig_list, selected_data = prepared_data
+    dataconfig_list = prepared_data
     benchmark_spectra = np.load(reference_file, allow_pickle=True)
     old_spectra = benchmark_spectra["spectra"].item()
 
@@ -78,13 +78,6 @@ def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
         old_error = None
 
     old_freqs = benchmark_spectra["freqs"].item()
-    
-    auto_spectra_orders = []
-    cross_spectra = []
-    if isinstance(keys_or_orders[0],  int):
-        auto_spectra_orders = keys_or_orders
-    else:
-        cross_spectra = keys_or_orders
 
     if name == "auto":
         sconfig = SpectrumConfig(
@@ -92,7 +85,7 @@ def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
             f_max=0.25,
             s3_calc="1/4",
             device="cpu",
-            auto_spectra_orders=auto_spectra_orders,   
+            spectra_channels=keys,
             frequency_points=100,
             interlacing=True,
             old_window=True,
@@ -103,8 +96,7 @@ def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
             f_max=0.25,
             s3_calc="1/4",
             device="cpu",
-            auto_spectra_orders=[],
-            cross_spectra=cross_spectra,
+            spectra_channels=keys,
             frequency_points=100,
             interlacing=True,
             old_window=True,
@@ -115,8 +107,7 @@ def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
             f_max=0.25,
             s3_calc="1/2",
             device="cpu",
-            auto_spectra_orders=[],
-            cross_spectra=cross_spectra,
+            spectra_channels=keys,
             frequency_points=100,
             interlacing=True,
             old_window=True,
@@ -124,18 +115,9 @@ def test_new_vs_old_api(name, reference_file, keys_or_orders, prepared_data):
     else:
         raise AssertionError(f"Update test parameters to include a test for {name}")
 
-    result_store = calculate_spectra(sconfig, dataconfig_list, selected=selected_data)
+    result_store = calculate_spectra(sconfig, dataconfig_list)
 
-    
-    if auto_spectra_orders:
-        keys_or_orders = []
-        for channel in selected_data:
-            for order in auto_spectra_orders:
-                channels = (channel,) * order
-                keys_or_orders.append(channels)
-
-    
-    for channel in keys_or_orders:
+    for channel in keys:
         order = len(channel)
         result = result_store.get(channel)
         assert old_spectra is not None

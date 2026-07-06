@@ -14,11 +14,7 @@ from .planning import build_runtime_config, initialize_result_store
 from .spectra import build_third_order_cache, compute_single_spectrum
 
 
-def calculate_spectra(
-    spectrum_config: SpectrumConfig,
-    data_config_list: list[DataConfig],
-    selected: list[int] | None = None,
-):
+def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]):
     """Calculate requested auto- and cross-polyspectra for one or more data channels.
 
     Builds the runtime configuration, expands the requested spectrum tasks, iterates over windowed
@@ -31,8 +27,6 @@ def calculate_spectra(
         Frequency, order, windowing, precision, and device options.
     data_config_list : list[:class:`DataConfig`]
         Input signal channels and sampling metadata.
-    selected : list[int] | None, optional
-        Channel indices to include. If ``None``, all channels are used.
 
     Returns
     -------
@@ -40,27 +34,27 @@ def calculate_spectra(
         Finalized spectra indexed by ``channels``.
     """
     runtime = build_runtime_config(
-        spectrum_config=spectrum_config, data_config_list=data_config_list, selected=selected
+        spectrum_config=spectrum_config, data_config_list=data_config_list
     )
     result_store = initialize_result_store(runtime)
     single_window, repeated_window = prepare_windows(runtime)
 
     third_order_cache = (
         build_third_order_cache(runtime)
-        if any(len(channels) == 3 for channels in runtime.spectra_keys)
+        if any(len(channels) == 3 for channels in runtime.spectra_channels)
         else None
     )
 
     for start, end, shifted in iter_window_slices(runtime):
         coeffs_by_channel = {}
 
-        for channel in runtime.selected_channels:
+        for channel in runtime.active_channels:
             data = data_config_list[channel].data[start:end]
             chunk = reshape_window_chunk(data, runtime)
             chunk = to_device(chunk, runtime)
             coeffs_by_channel[channel] = compute_fft(chunk, repeated_window, runtime)
 
-        for channels in runtime.spectra_keys:
+        for channels in runtime.spectra_channels:
             spectrum = compute_single_spectrum(
                 channels=channels,
                 coeffs_by_channel=coeffs_by_channel,

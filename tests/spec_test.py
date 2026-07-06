@@ -1,10 +1,11 @@
 # This test doesn't showcase what higher order spectra are actually meant for
-# since I am using them on trigonometrical functions with no noise. 
+# since I am using them on trigonometrical functions with no noise.
 # However i know the results so they are good for testing.
 
 import numpy as np
 from multichss.pipelines import calculate_spectra
 from multichss.configurators import SpectrumConfig, DataConfig
+
 
 def test_c1_returns_correct_mean():
     """
@@ -18,15 +19,18 @@ def test_c1_returns_correct_mean():
 
     # Wrap into config objects
     config1 = DataConfig(data=y, dt=0.01, t_unit="s")
-    selected_data = [0]
 
     sconfig = SpectrumConfig(
-        f_min=0, f_max=2, s3_calc='1/4', device='cpu', auto_spectra_orders=[1],
+        f_min=0,
+        f_max=2,
+        s3_calc="1/4",
+        device="cpu",
+        spectra_channels=[(0,)],
         frequency_points=100,
     )
 
     # Run the spectrum calculator
-    result_store = calculate_spectra(sconfig, [config1], selected_data)
+    result_store = calculate_spectra(sconfig, [config1])
     result = result_store.get((0,))
 
     assert result.spectrum is not None
@@ -50,11 +54,11 @@ def test_c1_returns_mean_when_selected_band_excludes_dc():
         f_min=1,
         f_max=2,
         device="cpu",
-        auto_spectra_orders=[1],
+        spectra_channels=[(0,)],
         frequency_points=100,
     )
 
-    result_store = calculate_spectra(sconfig, [config1], selected=[0])
+    result_store = calculate_spectra(sconfig, [config1])
     result = result_store.get((0,))
 
     assert result.spectrum is not None

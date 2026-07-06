@@ -151,11 +151,10 @@ class SpectrumConfig(BaseModel):
         ``dt`` is used.
     frequency_points : int = 100
         Number of frequency points in the specified frequency range. Must be positive.
-    auto_spectra_orders : list[int] = ``[1, 2, 3, 4]``
-        Spectrum orders (between 1 and 4) for which auto-correlation spectra be calculated.
-    cross_spectra : list[tuple[ChannelIndex, ...] | None = None
-        Specifies which multi-channel (cross-correlation) spectra will be calculated. Each tuple
-        represents one cross-correlation spectrum. Each tuple entry is a channel index.
+    spectra_channels : list[tuple[ChannelIndex, ...] | None = None
+        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index. If ``None``, the auto-
+        correlation spectra of orders 1 to 4 will be calculated of all available data channels.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
@@ -189,12 +188,15 @@ class SpectrumConfig(BaseModel):
     f_min: float = 0.0
     f_max: float | None = None
     frequency_points: Annotated[int, Field(ge=2)] = 100
-    auto_spectra_orders: list[Annotated[int, Field(ge=1, le=4)]] = [1, 2, 3, 4]
-    cross_spectra: (
-        list[
-            tuple[ChannelIndex, ChannelIndex]
-            | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
-            | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
+    spectra_channels: (
+        Annotated[
+            list[
+                tuple[ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
+            ],
+            Field(min_length=1),
         ]
         | None
     ) = None
@@ -206,35 +208,24 @@ class SpectrumConfig(BaseModel):
     interlacing: bool = False
     old_window: bool = False
 
-    @property
-    def _old_window(self) -> bool:
-        return self.old_window
-
     @model_validator(mode="after")
     def validate_spectrum_request(self) -> SpectrumConfig:
-        if len(self.auto_spectra_orders) != len(set(self.auto_spectra_orders)):
-            raise ValueError("Auto-spectrum orders cannot contain duplicates.")
+        """
+        Check if spectra_channels contains duplicates and if f_min == 0 if an third-order spectrum
+        is requested.
+        """
+        if self.spectra_channels is not None:
+            if len(self.spectra_channels) != len(set(self.spectra_channels)):
+                raise ValueError("spectrum_channels cannot contain duplicates.")
 
-        if self.cross_spectra is not None:
-            if len(self.cross_spectra) != len(set(self.cross_spectra)):
-                raise ValueError("Cross-spectra cannot contain duplicates.")
+            requested_orders = set([])
+            requested_orders.update(len(channels) for channels in self.spectra_channels)
 
-            if any(len(set(channels)) == 1 for channels in self.cross_spectra):
-                raise ValueError("Cross-spectra cannot include auto-spectra.")
-
-        requested_orders = set(self.auto_spectra_orders)
-
-        if self.cross_spectra is not None:
-            requested_orders.update(len(channels) for channels in self.cross_spectra)
-
-        if not requested_orders:
-            raise ValueError("At least one auto-order or cross-spectrum must be requested.")
-
-        if self.f_min != 0 and 3 in requested_orders:
-            raise ValueError(
-                "Third-order spectra cannot be requested with f_min != 0. "
-                "Use f_min=0 and s3_calc='1/2' if you want a symmetric spectrum with negative "
-                "frequencies."
-            )
+            if self.f_min != 0 and 3 in requested_orders:
+                raise ValueError(
+                    "Third-order spectra cannot be requested with f_min != 0. "
+                    "Use f_min=0 and s3_calc='1/2' if you want a symmetric third-order spectrum "
+                    "with negative frequencies."
+                )
 
         return self
