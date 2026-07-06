@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 
 from .cumulants import a_w3_gen, c1, c2, c3, c4, calc_a_w3, index_generation_to_aw_3
+from .fft import WindowBuffer
 from .planning import RuntimeConfig
 
 
@@ -41,7 +42,7 @@ def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderCache | None:
 def compute_single_spectrum(
     channels: tuple[int, ...],
     coeffs_by_channel: dict[int, Tensor],
-    single_window: Tensor,
+    window_buffer: WindowBuffer,
     runtime: RuntimeConfig,
     third_order_cache: ThirdOrderCache | None = None,
 ) -> Tensor:
@@ -68,14 +69,12 @@ def compute_single_spectrum(
     if order == 1:
         coeffs = coeffs_by_channel[channels[0]]
         single_spectrum = c1(runtime.use_full_fft, coeffs)
-        norm = runtime.dt * single_window.mean() * single_window.shape[0]
 
     elif order == 2:
         a_w1 = coeffs_by_channel[channels[0]][:, f_min_idx:f_max_idx, :]
         a_w2 = coeffs_by_channel[channels[1]][:, f_min_idx:f_max_idx, :]
         single_spectrum = c2(runtime.m, a_w1, a_w2)
-        norm = runtime.dt * (single_window**2).sum()
-
+        
     elif order == 3:
         if third_order_cache is None:
             raise ValueError("Third-order spectra require third_order_cache.")
@@ -104,7 +103,6 @@ def compute_single_spectrum(
         )
 
         single_spectrum = c3(runtime.m, a_w1, a_w2, a_w3)
-        norm = runtime.dt * (single_window**3).sum()
 
     elif order == 4:
         a_w1 = coeffs_by_channel[channels[0]][:, f_min_idx:f_max_idx, :]
@@ -113,9 +111,8 @@ def compute_single_spectrum(
         a_w4 = coeffs_by_channel[channels[3]][:, f_min_idx:f_max_idx, :]
 
         single_spectrum = c4(runtime.m, a_w1, a_w2, a_w3, a_w4)
-        norm = runtime.dt * (single_window**4).sum()
 
     else:
         raise ValueError(f"Unsupported spectrum order: {order}.")
 
-    return torch.conj(single_spectrum / norm)
+    return torch.conj(single_spectrum / window_buffer.norm(order))

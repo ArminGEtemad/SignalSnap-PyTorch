@@ -37,7 +37,7 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
         spectrum_config=spectrum_config, data_config_list=data_config_list
     )
     result_store = initialize_result_store(runtime)
-    single_window, repeated_window = prepare_windows(runtime)
+    window_buffer = prepare_windows(runtime)
 
     third_order_cache = (
         build_third_order_cache(runtime)
@@ -52,13 +52,13 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
             data = data_config_list[channel].data[start:end]
             chunk = reshape_window_chunk(data, runtime)
             chunk = to_device(chunk, runtime)
-            coeffs_by_channel[channel] = compute_fft(chunk, repeated_window, runtime)
+            coeffs_by_channel[channel] = compute_fft(chunk, window_buffer.repeated, runtime)
 
         for channels in runtime.spectra_channels:
             spectrum = compute_single_spectrum(
                 channels=channels,
                 coeffs_by_channel=coeffs_by_channel,
-                single_window=single_window,
+                window_buffer=window_buffer,
                 runtime=runtime,
                 third_order_cache=third_order_cache,
             )

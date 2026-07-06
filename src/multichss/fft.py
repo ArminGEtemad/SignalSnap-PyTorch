@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -16,7 +17,9 @@ from torch import Tensor
 from .planning import RuntimeConfig
 
 
-### old code from previous api
+### ------------------------
+# old code from previous api
+### ------------------------
 def _old_gaussian_window(x: Tensor, n_windows: int, l: int, sigma_t: float) -> Tensor:
     """Approx. confined Gaussian window (see DOI:10.1016/j.sigpro.2014.03.033)."""
 
@@ -70,9 +73,24 @@ def _old_cg_window(
 
     return window_full
 
+### -------------
+# end of old code
+### -------------
 
-### end of old code
 
+@dataclass(frozen=True, slots=True)
+class WindowBuffer:
+    """
+    Stores all information related to the window function, so these dont need to be computed
+    repeatedly.
+    """
+    single: Tensor
+    repeated: Tensor
+    norm_all_orders: tuple[Tensor, Tensor, Tensor, Tensor]
+
+    def norm(self, order: int) -> Tensor:
+        return self.norm_all_orders[order - 1]
+    
 
 def _gaussian(x: Tensor, N: int, sigma_t_prefactor: float) -> Tensor:
     """
@@ -172,12 +190,12 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
     return coeffs * runtime.dt
 
 
-def prepare_windows(runtime: RuntimeConfig) -> tuple[Tensor, Tensor]:
+def prepare_windows(runtime: RuntimeConfig) -> WindowBuffer:
     """Build the window tensors used for each spectral estimate.
 
     Returns
     -------
-    tuple[Tensor, Tensor]
+    WindowBuffer
         ``single_window`` has shape ``(N,)`` where ``N = runtime.window_points``.
         ``repeated_window`` has shape ``(m, N, 1)`` where ``m = runtime.m`` and is shaped to
         multiply directly with reshaped signal chunks.
@@ -198,7 +216,16 @@ def prepare_windows(runtime: RuntimeConfig) -> tuple[Tensor, Tensor]:
         )
 
     repeated_window = single_window.reshape(1, runtime.window_points, 1).repeat(runtime.m, 1, 1)
-    return single_window, repeated_window
+    return WindowBuffer(
+        single=single_window,
+        repeated=repeated_window,
+        norm_all_orders=(
+            runtime.dt * single_window.sum(),
+            runtime.dt * (single_window**2).sum(),
+            runtime.dt * (single_window**3).sum(),
+            runtime.dt * (single_window**4).sum(),
+        ),
+    )
 
 
 def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
