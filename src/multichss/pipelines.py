@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .aggregator import accumulate_spectrum, finalize_result
 from .configurators import DataConfig, SpectrumConfig
-from .fft import compute_fft, iter_window_slices, prepare_windows, reshape_window_chunk, to_device
+from .fft import compute_fft, iter_window_slices, prepare_window, reshape_window_chunk, to_device
 from .planning import build_runtime_config, initialize_result_store
 from .spectra import build_third_order_cache, compute_single_spectrum
 
@@ -37,7 +37,7 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
         spectrum_config=spectrum_config, data_config_list=data_config_list
     )
     result_store = initialize_result_store(runtime)
-    window_buffer = prepare_windows(runtime)
+    window_buffer = prepare_window(runtime)
 
     third_order_cache = (
         build_third_order_cache(runtime)

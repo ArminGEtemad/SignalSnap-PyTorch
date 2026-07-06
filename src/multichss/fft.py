@@ -190,7 +190,7 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
     return coeffs * runtime.dt
 
 
-def prepare_windows(runtime: RuntimeConfig) -> WindowBuffer:
+def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
     """Build the window tensors used for each spectral estimate.
 
     Returns
