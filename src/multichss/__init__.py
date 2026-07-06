@@ -9,18 +9,9 @@ from __future__ import annotations
 
 from .configurators import DataConfig, PlotConfig, SpectrumConfig
 from .pipelines import calculate_spectra
-from .planning import (
-    RuntimeConfig,
-    build_runtime_config,
-    initialize_result_store,
-)
+from .planning import RuntimeConfig, build_runtime_config, initialize_result_store
 from .results import SpectrumResult, SpectrumResultStore
-from .utils import (
-    FrequencyUnits,
-    TimeUnits,
-    data_config_dic,
-    unit_conversion_time_to_freq,
-)
+from .utils import FrequencyUnits, TimeUnits, unit_conversion_time_to_freq
 
 __all__ = [
     "DataConfig",
@@ -33,7 +24,6 @@ __all__ = [
     "TimeUnits",
     "build_runtime_config",
     "calculate_spectra",
-    "data_config_dic",
     "initialize_result_store",
     "unit_conversion_time_to_freq",
 ]
