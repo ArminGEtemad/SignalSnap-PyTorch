@@ -29,9 +29,11 @@ class RuntimeConfig:
     ----------
     active_channels : tuple[int, ...]
         Data-channel indices used by the calculation.
-    spectra_channels : tuple[tuple[int,...],...]
+    spectra_channels : tuple[tuple[int, ...], ...]
         Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
         or cross-correlation spectrum. Each tuple entry is a channel index.
+    orders : tuple[int, ...]
+        Orders at which spectra are computed.
     dt : float
         Sampling interval shared by all selected data channels.
     window_points : int
@@ -72,6 +74,7 @@ class RuntimeConfig:
 
     active_channels: tuple[int, ...]
     spectra_channels: tuple[tuple[ChannelIndex, ...], ...]
+    orders: tuple[int, ...]
     dt: float
     window_points: int
     m: int
@@ -196,7 +199,7 @@ def build_runtime_config(
     else:
         m = spectrum_config.m
 
-    orders = set([len(channels) for channels in spectra_channels])
+    orders = tuple(sorted({len(channels) for channels in spectra_channels}))
     if m < max(orders):
         raise ValueError("Not enough data points")
 
@@ -248,6 +251,7 @@ def build_runtime_config(
     return RuntimeConfig(
         active_channels=active_channels,
         spectra_channels=tuple(spectra_channels),
+        orders=orders,
         dt=dt,
         window_points=window_points,
         m=m,
