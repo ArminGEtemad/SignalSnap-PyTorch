@@ -11,7 +11,11 @@ from .aggregator import accumulate_spectrum, finalize_result
 from .configurators import DataConfig, SpectrumConfig
 from .fft import compute_fft, iter_window_slices, prepare_window, reshape_window_chunk, to_device
 from .planning import build_runtime_config, initialize_result_store
-from .spectra import build_third_order_cache, compute_single_spectrum
+from .spectra import (
+    build_intermediate_slice_buffer,
+    build_third_order_cache,
+    compute_single_spectrum,
+)
 
 
 def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]):
@@ -39,11 +43,7 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
     result_store = initialize_result_store(runtime)
     window_buffer = prepare_window(runtime)
 
-    third_order_cache = (
-        build_third_order_cache(runtime)
-        if any(len(channels) == 3 for channels in runtime.spectra_channels)
-        else None
-    )
+    third_order_cache = build_third_order_cache(runtime) if 3 in runtime.orders else None
 
     for start, end, shifted in iter_window_slices(runtime):
         coeffs_by_channel = {}
@@ -54,13 +54,16 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
             chunk = to_device(chunk, runtime)
             coeffs_by_channel[channel] = compute_fft(chunk, window_buffer.repeated, runtime)
 
+        intermediate_buffer = build_intermediate_slice_buffer(
+            runtime, coeffs_by_channel, third_order_cache
+        )
+
         for channels in runtime.spectra_channels:
             spectrum = compute_single_spectrum(
                 channels=channels,
-                coeffs_by_channel=coeffs_by_channel,
+                intermediate_buffer=intermediate_buffer,
                 window_buffer=window_buffer,
                 runtime=runtime,
-                third_order_cache=third_order_cache,
             )
             result = result_store.get(channels)
             accumulate_spectrum(result, spectrum, shifted=shifted)
