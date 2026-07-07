@@ -12,7 +12,12 @@ from torch import Tensor
 
 
 def build_s3_target_indices(axis_indices: Tensor, fft_freq_count: int) -> tuple[Tensor, Tensor]:
-    """Map output-axis bins (w1, w2) to the shifted-FFT bin for w3 = -(w1 + w2)."""
+    """Map output-axis bins (w1, w2) to the shifted-FFT bin for w3 = -(w1 + w2).
+    safe_indices is a 2D grid based on (w1, w2) which includes the corresponding indices of the
+    shifted fft array for w3. Every w1 + w2 that is out of bounds will receive index 0.
+    valid_mask is a 2D grid containing ``True`` when w1 + w2 is a valid frequency and ``False`` 
+    otherwise, which can later be used to delete any values that were computed out of bounds.
+    """
     zero_idx = fft_freq_count // 2
     axis_offsets = axis_indices - zero_idx
 

@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import cast
 
 import torch
 from torch import Tensor
@@ -25,9 +24,7 @@ class ThirdOrderIndexCache:
 
 
 @dataclass(slots=True)
-class ThirdOrderPrepared:
-    a_w1: Tensor
-    a_w2: Tensor
+class ThirdOrderFactor:
     a_w3: Tensor
     valid_mask: Tensor
 
@@ -44,7 +41,7 @@ class IntermediateSliceBuffer:
     third_order_cache: ThirdOrderIndexCache | None = None
 
     _coeffs_by_channel_band: dict[int, Tensor] = field(default_factory=dict)
-    _third_order_prepared_by_channels: dict[tuple[int, int, int], ThirdOrderPrepared] = field(
+    _c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(
         default_factory=dict
     )
 
@@ -55,27 +52,22 @@ class IntermediateSliceBuffer:
             ]
         return self._coeffs_by_channel_band[channel]
 
-    def third_order_prepared(self, channels: tuple[int, int, int]) -> ThirdOrderPrepared:
-        if channels not in self._third_order_prepared_by_channels:
+    def c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
+        if channel not in self._c3_third_factor_by_channel:
             if self.third_order_cache is None:
                 raise ValueError("Third-order spectra require third_order_cache.")
-
-            a_w1 = self.coeffs_by_channel_band(channels[0])
-            a_w2 = self.coeffs_by_channel_band(channels[1])
             a_w3 = gather_s3_third_factor(
-                self.coeffs_by_channel[channels[2]],
+                self.coeffs_by_channel[channel],
                 self.third_order_cache.target_indices,
                 self.m,
             )
 
-            self._third_order_prepared_by_channels[channels] = ThirdOrderPrepared(
-                a_w1=a_w1,
-                a_w2=a_w2,
+            self._c3_third_factor_by_channel[channel] = ThirdOrderFactor(
                 a_w3=a_w3,
                 valid_mask=self.third_order_cache.valid_mask,
             )
 
-        return self._third_order_prepared_by_channels[channels]
+        return self._c3_third_factor_by_channel[channel]
 
 
 def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderIndexCache:
@@ -135,9 +127,13 @@ def compute_single_spectrum(
         )
 
     elif order == 3:
-        order3_channels = cast(tuple[int, int, int], channels)
-        prepared = intermediate_buffer.third_order_prepared(order3_channels)
-        single_spectrum = c3(runtime.m, prepared.a_w1, prepared.a_w2, prepared.a_w3)
+        prepared = intermediate_buffer.c3_third_factor_by_channel(channels[2])
+        single_spectrum = c3(
+            runtime.m,
+            intermediate_buffer.coeffs_by_channel_band(channels[0]),
+            intermediate_buffer.coeffs_by_channel_band(channels[1]),
+            prepared.a_w3,
+        )
 
         nan_value = torch.full_like(single_spectrum, complex(float("nan"), 0.0))
         single_spectrum = torch.where(prepared.valid_mask, single_spectrum, nan_value)
