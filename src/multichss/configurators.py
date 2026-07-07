@@ -220,12 +220,14 @@ class SpectrumConfig(BaseModel):
 
             requested_orders = set([])
             requested_orders.update(len(channels) for channels in self.spectra_channels)
+        else:
+            requested_orders = {1, 2, 3, 4}
 
-            if self.f_min != 0 and 3 in requested_orders:
-                raise ValueError(
-                    "Third-order spectra cannot be requested with f_min != 0. "
-                    "Use f_min=0 and s3_calc='1/2' if you want a symmetric third-order spectrum "
-                    "with negative frequencies."
-                )
+        if self.f_min != 0 and 3 in requested_orders:
+            raise ValueError(
+                "Third-order spectra cannot be requested with f_min != 0. "
+                "Use f_min=0 and s3_calc='1/2' if you want a symmetric third-order spectrum "
+                "with negative frequencies."
+            )
 
         return self
