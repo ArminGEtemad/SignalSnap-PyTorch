@@ -26,6 +26,40 @@ cross_keys_ch3 = [
 ]
 
 
+def _common_region(actual, expected):
+    common_shape = tuple(min(a, e) for a, e in zip(actual.shape, expected.shape))
+    common_slices = tuple(slice(0, size) for size in common_shape)
+    return actual[common_slices], expected[common_slices]
+
+
+def _indices_for_freqs(actual_freq, expected_freq):
+    indices = []
+    for freq in expected_freq:
+        matches = np.flatnonzero(np.isclose(actual_freq, freq, rtol=0.0, atol=1e-12))
+        if matches.size != 1:
+            raise AssertionError(f"Frequency {freq} is not represented exactly once.")
+        indices.append(matches[0])
+    return np.asarray(indices)
+
+
+def _legacy_order3_region(actual_spectrum, actual_freq, expected_spectrum, expected_freq):
+    if expected_spectrum.shape == (expected_freq.size, expected_freq.size):
+        row_freq = expected_freq
+        col_freq = expected_freq
+    elif expected_spectrum.ndim == 2 and expected_spectrum.shape[1] == expected_freq.size:
+        row_freq = expected_freq[expected_freq.size // 2 :]
+        col_freq = expected_freq
+    else:
+        raise AssertionError(
+            f"Unsupported legacy third-order shape {expected_spectrum.shape} "
+            f"for frequency axis length {expected_freq.size}."
+        )
+
+    row_indices = _indices_for_freqs(actual_freq, row_freq)
+    col_indices = _indices_for_freqs(actual_freq, col_freq)
+    return actual_spectrum[np.ix_(row_indices, col_indices)], expected_spectrum
+
+
 @pytest.fixture(scope="module")
 def prepared_data():
     with h5py.File("./tests/test_data/datasets/5Qubit_short_data.h5", "r") as f:
@@ -80,13 +114,13 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
     old_freqs = benchmark_spectra["freqs"].item()
 
     if name == "auto":
+        legacy_s3_freq = np.asarray(old_freqs[0][3])
         sconfig = SpectrumConfig(
-            f_min=0,
-            f_max=0.25,
-            s3_calc="1/4",
+            f_min=float(legacy_s3_freq[0]),
+            f_max=float(legacy_s3_freq[-1]),
             device="cpu",
             spectra_channels=keys,
-            frequency_points=100,
+            frequency_points=legacy_s3_freq.size,
             interlacing=True,
             old_window=True,
         )
@@ -94,7 +128,6 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
         sconfig = SpectrumConfig(
             f_min=-0.25,
             f_max=0.25,
-            s3_calc="1/4",
             device="cpu",
             spectra_channels=keys,
             frequency_points=100,
@@ -102,13 +135,13 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
             old_window=True,
         )
     elif name == "cross_ch3":
+        legacy_s3_freq = np.asarray(old_freqs[keys[0]][3])
         sconfig = SpectrumConfig(
-            f_min=0,
-            f_max=0.25,
-            s3_calc="1/2",
+            f_min=float(legacy_s3_freq[0]),
+            f_max=float(legacy_s3_freq[-1]),
             device="cpu",
             spectra_channels=keys,
-            frequency_points=100,
+            frequency_points=legacy_s3_freq.size,
             interlacing=True,
             old_window=True,
         )
@@ -128,9 +161,35 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
         else:
             normalized_channel = channel
 
+        if order == 3:
+            assert result.freq is not None
+            assert result.spectrum.shape == (result.freq.size, result.freq.size)
+            actual_spectrum = np.asarray(result.spectrum)
+            expected_spectrum = np.asarray(old_spectra[normalized_channel][order])
+            actual_spectrum, expected_spectrum = _legacy_order3_region(
+                actual_spectrum,
+                np.asarray(result.freq),
+                expected_spectrum,
+                np.asarray(old_freqs[normalized_channel][order]),
+            )
+            np.testing.assert_allclose(
+                actual_spectrum,
+                expected_spectrum,
+                rtol=1e-6,
+                atol=1e-8,
+                err_msg=(
+                    f"Legacy third-order region for channel {channel} doesn't match "
+                    "the corresponding new full-axis result."
+                ),
+            )
+            continue
+
+        actual_spectrum = np.asarray(result.spectrum)
+        expected_spectrum = np.asarray(old_spectra[normalized_channel][order])
+        actual_spectrum, expected_spectrum = _common_region(actual_spectrum, expected_spectrum)
         np.testing.assert_allclose(
-            np.asarray(result.spectrum),
-            np.asarray(old_spectra[normalized_channel][order]),
+            actual_spectrum,
+            expected_spectrum,
             rtol=1e-6,
             atol=1e-8,
             err_msg=f"Spectrum at order {order} for channel {channel} doesn't match.",
@@ -140,8 +199,10 @@ def test_new_vs_old_api(name, reference_file, keys, prepared_data):
         expected_freq = (
             np.asarray([0.0]) if order == 1 else np.asarray(old_freqs[normalized_channel][order])
         )
+        actual_freq = np.asarray(result.freq)
+        actual_freq, expected_freq = _common_region(actual_freq, expected_freq)
         np.testing.assert_allclose(
-            np.asarray(result.freq),
+            actual_freq,
             expected_freq,
             rtol=0,
             atol=1e-12,

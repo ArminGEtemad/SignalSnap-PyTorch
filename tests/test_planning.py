@@ -135,6 +135,26 @@ def test_pipeline_processes_runtime_spectral_estimates():
         )
 
 
+def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_masked():
+    spectrum_config = SpectrumConfig(
+        f_min=-0.25,
+        f_max=0.25,
+        frequency_points=5,
+        spectra_channels=[(0, 0, 0)],
+        m=4,
+        spectral_estimates_max=1,
+    )
+    data_config = DataConfig(data=np.ones(64), dt=1.0)
+
+    result_store = calculate_spectra(spectrum_config, [data_config])
+    result = result_store.get((0, 0, 0))
+
+    assert result.freq is not None
+    assert result.spectrum is not None
+    assert result.spectrum.shape == (result.freq.size, result.freq.size)
+    assert np.isnan(result.spectrum).any()
+
+
 def test_pipeline_processes_runtime_spectral_estimates_without_interlacing():
     spectrum_config = SpectrumConfig(
         f_min=0.0,

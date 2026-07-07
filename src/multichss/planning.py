@@ -14,7 +14,7 @@ import torch
 
 from .configurators import DataConfig, SpectrumConfig
 from .results import SpectrumResult, SpectrumResultStore
-from .utils import ChannelIndex, FrequencyUnits, S3Calcs, TimeUnits, unit_conversion_time_to_freq
+from .utils import ChannelIndex, FrequencyUnits, TimeUnits, unit_conversion_time_to_freq
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,22 +43,22 @@ class RuntimeConfig:
         is too short. Must be positive.
     n_data_points : int
         Number of samples in each selected data channel.
+    freq_all : np.ndarray
+        Full frequency axis.
+    fft_freq_count : int
+        Number of frequencies in ``freq_all``. Is equal to ``window_points``.
     freq_band : np.ndarray
         Selected frequency axis.
+    band_start_idx, band_end_idx : int
+        Slice indices selecting the configured frequency band.
     freq_unit : Literal["Hz", "kHz", "MHz", "GHz", "THz"]
         Unit of the frequency axis.
-    f_min_idx, f_max_idx : int
-        Slice indices selecting the configured frequency band.
-    use_full_fft : bool
-        Whether negative frequencies require full FFT handling.
     real_dtype : torch.dtype
         Sets the dtype of floats.
     complex_dtype : torch.dtype
         Sets the dtype of complex numbers.
     device : torch.device
         Torch device used for calculation.
-    s3_calc : Literal["1/4", "1/2"]
-        Method used for third-order spectrum calculation.
     spectral_estimates: int
         Number of unshifted spectral estimates processed by the base calculation. If
         ``interlacing=True``, up to the same number of additional shifted estimates are calculated
@@ -79,15 +79,15 @@ class RuntimeConfig:
     window_points: int
     m: int
     n_data_points: int
+    freq_all: np.ndarray
+    fft_freq_count: int
     freq_band: np.ndarray
+    band_start_idx: int
+    band_end_idx: int
     freq_unit: FrequencyUnits
-    f_min_idx: int
-    f_max_idx: int
-    use_full_fft: bool
     real_dtype: torch.dtype
     complex_dtype: torch.dtype
     device: torch.device
-    s3_calc: S3Calcs
     spectral_estimates: int
     interlacing: bool
     old_window: bool
@@ -204,15 +204,11 @@ def build_runtime_config(
         raise ValueError("Not enough data points")
 
     # get the frequency axis
-    use_full_fft = spectrum_config.f_min < 0
-    if use_full_fft:
-        freq_all = np.fft.fftfreq(window_points, dt)
-        freq_all = np.fft.fftshift(freq_all)
-    else:
-        freq_all = np.fft.rfftfreq(window_points, dt)
+    freq_all = np.fft.fftfreq(window_points, dt)
+    freq_all = np.fft.fftshift(freq_all)
 
-    f_max_idx = int(np.sum(freq_all <= f_max))
-    f_min_idx = int(np.sum(freq_all < spectrum_config.f_min))
+    band_end_idx = int(np.sum(freq_all <= f_max))
+    band_start_idx = int(np.sum(freq_all < spectrum_config.f_min))
 
     # determine the data types based on the given precision
     if spectrum_config.precision == "single":
@@ -256,15 +252,15 @@ def build_runtime_config(
         window_points=window_points,
         m=m,
         n_data_points=n_data_points,
-        freq_band=freq_all[f_min_idx:f_max_idx],
+        freq_all=freq_all,
+        fft_freq_count=window_points,
+        freq_band=freq_all[band_start_idx:band_end_idx],
+        band_start_idx=band_start_idx,
+        band_end_idx=band_end_idx,
         freq_unit=unit_conversion_time_to_freq(t_unit),
-        f_min_idx=f_min_idx,
-        f_max_idx=f_max_idx,
-        use_full_fft=use_full_fft,
         real_dtype=real_dtype,
         complex_dtype=complex_dtype,
         device=torch.device(spectrum_config.device),
-        s3_calc=spectrum_config.s3_calc,
         spectral_estimates=spectral_estimates,
         interlacing=spectrum_config.interlacing,
         old_window=spectrum_config.old_window,

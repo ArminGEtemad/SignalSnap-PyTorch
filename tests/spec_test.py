@@ -23,7 +23,6 @@ def test_c1_returns_correct_mean():
     sconfig = SpectrumConfig(
         f_min=0,
         f_max=2,
-        s3_calc="1/4",
         device="cpu",
         spectra_channels=[(0,)],
         frequency_points=100,

@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, DirectoryPath, Field, field_validator, model_validator
 
-from .utils import ChannelIndex, S3Calcs, TimeUnits
+from .utils import ChannelIndex, TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -158,8 +158,6 @@ class SpectrumConfig(BaseModel):
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
-    s3_calc : Literal["1/4", "1/2"] = "1/4"
-        Method used for third-order spectrum calculation.
     device : Literal["cpu", "mps", "cuda"]  = "cpu"
         Torch device requested for calculation.
     precision : Literal["auto", "single", "double"] = "auto"
@@ -201,33 +199,20 @@ class SpectrumConfig(BaseModel):
         | None
     ) = None
     m: Annotated[int, Field(gt=0)] = 10
-    s3_calc: S3Calcs = "1/4"
     device: Literal["cpu", "mps", "cuda"] = "cpu"
     precision: Literal["auto", "single", "double"] = "auto"
     spectral_estimates_max: Annotated[int, Field(gt=0)] | None = int(1e6)
     interlacing: bool = False
     old_window: bool = False
 
-    @model_validator(mode="after")
-    def validate_spectrum_request(self) -> SpectrumConfig:
+    @field_validator("spectra_channels", mode="before")
+    @classmethod
+    def validate_spectrum_request(cls, spectra_channels):
         """
-        Check if spectra_channels contains duplicates and if f_min == 0 if an third-order spectrum
-        is requested.
+        Check if spectra_channels contains duplicates.
         """
-        if self.spectra_channels is not None:
-            if len(self.spectra_channels) != len(set(self.spectra_channels)):
+        if spectra_channels is not None:
+            if len(spectra_channels) != len(set(spectra_channels)):
                 raise ValueError("spectrum_channels cannot contain duplicates.")
 
-            requested_orders = set([])
-            requested_orders.update(len(channels) for channels in self.spectra_channels)
-        else:
-            requested_orders = {1, 2, 3, 4}
-
-        if self.f_min != 0 and 3 in requested_orders:
-            raise ValueError(
-                "Third-order spectra cannot be requested with f_min != 0. "
-                "Use f_min=0 and s3_calc='1/2' if you want a symmetric third-order spectrum "
-                "with negative frequencies."
-            )
-
-        return self
+        return spectra_channels

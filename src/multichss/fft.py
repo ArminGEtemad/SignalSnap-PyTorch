@@ -175,17 +175,11 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
     Returns
     -------
     Tensor
-        Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N, 1)`` when
-        ``runtime.use_full_fft`` is true, otherwise ``(m, N // 2 + 1, 1)`` for the real FFT.
+        Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N, 1)``.
     """
 
-    weighted_chunk = window * chunk
-
-    if runtime.use_full_fft:
-        coeffs = torch.fft.fft(weighted_chunk, dim=1)
-        coeffs = torch.fft.fftshift(coeffs, dim=1)
-    else:
-        coeffs = torch.fft.rfft(weighted_chunk, dim=1)
+    coeffs = torch.fft.fft(window * chunk, dim=1)
+    coeffs = torch.fft.fftshift(coeffs, dim=1)
 
     return coeffs * runtime.dt
 

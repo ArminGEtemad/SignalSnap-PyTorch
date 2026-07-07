@@ -4,14 +4,12 @@ from pydantic import ValidationError
 from multichss.configurators import SpectrumConfig
 
 
-def test_spectrum_config_rejects_nonzero_f_min_for_order_3_auto_spectrum():
-    with pytest.raises(ValidationError, match="Third-order spectra cannot be requested"):
-        SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 0, 0)])
+def test_spectrum_config_allows_negative_f_min_for_order_3_auto_spectrum():
+    SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 0, 0)])
 
 
-def test_spectrum_config_rejects_nonzero_f_min_for_order_3_cross_spectrum():
-    with pytest.raises(ValidationError, match="Third-order spectra cannot be requested"):
-        SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 1, 1)])
+def test_spectrum_config_allows_negative_f_min_for_order_3_cross_spectrum():
+    SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 1, 1)])
 
 
 def test_spectrum_config_allows_repeated_channels_in_spectra():

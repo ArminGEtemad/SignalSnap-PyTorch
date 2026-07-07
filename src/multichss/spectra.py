@@ -8,102 +8,97 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 import torch
 from torch import Tensor
 
-from .cumulants import a_w3_gen, c1, c2, c3, c4, calc_a_w3, index_generation_to_aw_3
+from .cumulants import build_s3_target_indices, c1, c2, c3, c4, gather_s3_third_factor
 from .fft import WindowBuffer
 from .planning import RuntimeConfig
-from .utils import S3Calcs
 
 
 @dataclass(slots=True)
-class ThirdOrderCache:
-    """Reusable tensors needed to assemble third-order Fourier coefficient products."""
+class ThirdOrderIndexCache:
+    target_indices: Tensor
+    valid_mask: Tensor
 
-    a_w3_init: Tensor
-    indices: Tensor
+
+@dataclass(slots=True)
+class ThirdOrderPrepared:
+    a_w1: Tensor
+    a_w2: Tensor
+    a_w3: Tensor
+    valid_mask: Tensor
 
 
 @dataclass(slots=True)
 class IntermediateSliceBuffer:
     """Stores precomputed intermediate results used in compute_single_spectrum()."""
 
-    f_min_idx: int
-    f_max_idx: int
+    band_start_idx: int
+    band_end_idx: int
     m: int
-    s3_calc: S3Calcs
-    third_order_cache: ThirdOrderCache | None = None
+    fft_freq_count: int
     coeffs_by_channel: dict[int, Tensor] = field(default_factory=dict)
+    third_order_cache: ThirdOrderIndexCache | None = None
 
     _coeffs_by_channel_band: dict[int, Tensor] = field(default_factory=dict)
-    _coeffs_by_channel_half_band: dict[int, Tensor] = field(default_factory=dict)
-    _third_order_factor_by_channel: dict[int, Tensor] = field(default_factory=dict)
+    _third_order_prepared_by_channels: dict[tuple[int, int, int], ThirdOrderPrepared] = field(
+        default_factory=dict
+    )
 
     def coeffs_by_channel_band(self, channel: int) -> Tensor:
         if channel not in self._coeffs_by_channel_band:
             self._coeffs_by_channel_band[channel] = self.coeffs_by_channel[channel][
-                :, self.f_min_idx : self.f_max_idx, :
+                :, self.band_start_idx : self.band_end_idx, :
             ]
         return self._coeffs_by_channel_band[channel]
 
-    def coeffs_by_channel_half_band(self, channel: int) -> Tensor:
-        if channel not in self._coeffs_by_channel_half_band:
-            self._coeffs_by_channel_half_band[channel] = self.coeffs_by_channel[channel][
-                :, self.f_min_idx : self.f_max_idx // 2, :
-            ]
-        return self._coeffs_by_channel_half_band[channel]
-
-    def third_order_factor(self, channel: int) -> Tensor:
-        if channel not in self._third_order_factor_by_channel:
+    def third_order_prepared(self, channels: tuple[int, int, int]) -> ThirdOrderPrepared:
+        if channels not in self._third_order_prepared_by_channels:
             if self.third_order_cache is None:
                 raise ValueError("Third-order spectra require third_order_cache.")
 
-            coeffs_perm = self.coeffs_by_channel[channel].permute((1, 2, 0))
-
-            if self.s3_calc == "1/2":
-                coeffs_perm = torch.cat(
-                    (coeffs_perm, torch.conj(coeffs_perm[1:, :, :].flip([0]))), dim=0
-                )
-
-            self._third_order_factor_by_channel[channel] = calc_a_w3(
-                coeffs_perm,
-                self.f_max_idx,
+            a_w1 = self.coeffs_by_channel_band(channels[0])
+            a_w2 = self.coeffs_by_channel_band(channels[1])
+            a_w3 = gather_s3_third_factor(
+                self.coeffs_by_channel[channels[2]],
+                self.third_order_cache.target_indices,
                 self.m,
-                self.third_order_cache.a_w3_init.clone(),
-                self.third_order_cache.indices,
             )
 
-        return self._third_order_factor_by_channel[channel]
+            self._third_order_prepared_by_channels[channels] = ThirdOrderPrepared(
+                a_w1=a_w1,
+                a_w2=a_w2,
+                a_w3=a_w3,
+                valid_mask=self.third_order_cache.valid_mask,
+            )
+
+        return self._third_order_prepared_by_channels[channels]
 
 
-def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderCache:
-    """Precompute third-order index and work tensors for the active runtime configuration."""
-
-    return ThirdOrderCache(
-        a_w3_init=a_w3_gen(
-            runtime.s3_calc,
-            runtime.f_max_idx,
-            runtime.m,
-            device=runtime.device,
-            dtype=runtime.complex_dtype,
-        ),
-        indices=index_generation_to_aw_3(runtime.s3_calc, runtime.f_max_idx, device=runtime.device),
+def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderIndexCache:
+    axis_indices = torch.arange(
+        runtime.band_start_idx,
+        runtime.band_end_idx,
+        device=runtime.device,
     )
+    target_indices, valid_mask = build_s3_target_indices(axis_indices, runtime.fft_freq_count)
+    return ThirdOrderIndexCache(target_indices=target_indices, valid_mask=valid_mask)
 
 
 def build_intermediate_slice_buffer(
     runtime: RuntimeConfig,
     coeffs_by_channel: dict[int, Tensor],
-    third_order_cache: ThirdOrderCache | None,
+    third_order_cache: ThirdOrderIndexCache | None,
 ) -> IntermediateSliceBuffer:
     return IntermediateSliceBuffer(
-        f_min_idx=runtime.f_min_idx,
-        f_max_idx=runtime.f_max_idx,
-        coeffs_by_channel=coeffs_by_channel,
+        band_start_idx=runtime.band_start_idx,
+        band_end_idx=runtime.band_end_idx,
         m=runtime.m,
-        s3_calc=runtime.s3_calc,
+        fft_freq_count=runtime.fft_freq_count,
+        coeffs_by_channel=coeffs_by_channel,
         third_order_cache=third_order_cache,
     )
 
@@ -119,24 +114,18 @@ def compute_single_spectrum(
     Dispatches to the cumulant implementation for orders 1 through 4 and applies the matching window
     normalization.
 
-    ``coeffs_by_channel`` maps each channel index to FFT coefficients with shape ``(m, K, 1)``,
-    where ``K = N`` for full FFTs and ``K = N // 2 + 1`` for real FFTs. The selected frequency band
-    has length ``F = runtime.f_max_idx - runtime.f_min_idx``.
+    ``coeffs_by_channel`` maps each channel index to shifted full-FFT coefficients with shape
+    ``(m, N, 1)``. The selected frequency band has length
+    ``F = runtime.band_end_idx - runtime.band_start_idx``.
 
     Returns a conjugated, window-normalized spectrum. Output shape depends on order: order 1 returns
-    ``(1,)``, order 2 returns ``(F,)``, order 3 returns ``(H, H)`` for ``s3_calc="1/4"`` or
-    ``(H, 2 * H - 1)`` for ``s3_calc="1/2"`` with ``H = runtime.f_max_idx // 2``, and order 4
-    returns ``(F, F)``.
-
-    Third-order shapes assume the calculation starts at ``runtime.f_min_idx == 0``.
+    ``(1,)``, order 2 returns ``(F,)``, and orders 3 and 4 return ``(F, F)``. Invalid third-order
+    points, where ``w3 = -(w1 + w2)`` is outside the shifted FFT support, are filled with ``NaN``.
     """
     order = len(channels)
 
     if order == 1:
-        single_spectrum = c1(
-            runtime.use_full_fft,
-            intermediate_buffer.coeffs_by_channel[channels[0]],
-        )
+        single_spectrum = c1(intermediate_buffer.coeffs_by_channel[channels[0]])
 
     elif order == 2:
         single_spectrum = c2(
@@ -146,14 +135,12 @@ def compute_single_spectrum(
         )
 
     elif order == 3:
-        a_w1 = intermediate_buffer.coeffs_by_channel_half_band(channels[0])
-        if runtime.s3_calc == "1/2":
-            a_w1 = torch.cat((a_w1[:, 1:, :].flip([1]).conj(), a_w1), dim=1)
+        order3_channels = cast(tuple[int, int, int], channels)
+        prepared = intermediate_buffer.third_order_prepared(order3_channels)
+        single_spectrum = c3(runtime.m, prepared.a_w1, prepared.a_w2, prepared.a_w3)
 
-        a_w2 = intermediate_buffer.coeffs_by_channel_half_band(channels[1])
-        a_w3 = intermediate_buffer.third_order_factor(channels[2])
-
-        single_spectrum = c3(runtime.m, a_w1, a_w2, a_w3)
+        nan_value = torch.full_like(single_spectrum, complex(float("nan"), 0.0))
+        single_spectrum = torch.where(prepared.valid_mask, single_spectrum, nan_value)
 
     elif order == 4:
         single_spectrum = c4(

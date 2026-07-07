@@ -13,7 +13,6 @@ from pydantic import Field
 
 TimeUnits: TypeAlias = Literal["s", "ms", "us", "ns", "ps"]
 FrequencyUnits: TypeAlias = Literal["Hz", "kHz", "MHz", "GHz", "THz"]
-S3Calcs: TypeAlias = Literal["1/4", "1/2"]
 ChannelIndex = Annotated[int, Field(ge=0)]
 
 
