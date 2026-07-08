@@ -14,7 +14,6 @@ from torch import Tensor
 
 from .cumulants import (
     build_s3_target_indices,
-    c1,
     c2_factorized,
     c3_factorized,
     c4_factorized,
@@ -50,11 +49,15 @@ class IntermediateSliceBuffer:
     _centered_coeffs_by_channel_band: dict[int, Tensor] = field(default_factory=dict)
     _centered_c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(default_factory=dict)
 
-    def centered_coeffs_by_channel_band(self, channel: int) -> Tensor:
+    def centered_coeffs_by_channel_band(self, channel: int, conjugated: bool = False) -> Tensor:
         if channel not in self._centered_coeffs_by_channel_band:
             coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx]
             self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
-        return self._centered_coeffs_by_channel_band[channel]
+        
+        if conjugated:
+            return torch.conj(self._centered_coeffs_by_channel_band[channel])
+        else:
+            return self._centered_coeffs_by_channel_band[channel]
 
     def centered_c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
         if channel not in self._centered_c3_third_factor_by_channel:
@@ -121,13 +124,15 @@ def compute_single_spectrum(
     order = len(channels)
 
     if order == 1:
-        single_spectrum = c1(intermediate_buffer.coeffs_by_channel[channels[0]])
+        a_w = intermediate_buffer.coeffs_by_channel[channels[0]]
+        dc_index = a_w.shape[1] // 2
+        single_spectrum = torch.mean(a_w[:, dc_index], dim=0).reshape(1)
 
     elif order == 2:
         single_spectrum = c2_factorized(
             runtime.m,
             intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
-            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[1])),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[1], conjugated=True),
         )
 
     elif order == 3:
@@ -147,9 +152,9 @@ def compute_single_spectrum(
         single_spectrum = c4_factorized(
             runtime.m,
             intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
-            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[1])),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[1], conjugated=True),
             intermediate_buffer.centered_coeffs_by_channel_band(channels[2]),
-            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[3])),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[3], conjugated=True),
         )
     else:
         raise ValueError(f"Unsupported spectrum order: {order}.")

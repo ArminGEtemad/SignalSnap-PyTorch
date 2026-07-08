@@ -46,26 +46,12 @@ def _mean_outer(m: int, a: Tensor, b: Tensor) -> Tensor:
     return torch.einsum("mf,mg->fg", a, b) / m
 
 
-def c1(a_w: Tensor) -> Tensor:
-    """First-order cumulant.
-
-
-    ``a_w`` has shape ``(m, N)`` with ``N = runtime.window_points``. The returned tensor has shape
-    ``(1,)`` and contains the DC component which is the center frequency for a full FFT input.
-    """
-
-    s1 = torch.mean(a_w, dim=0)
-    dc_index = s1.shape[0] // 2
-    result = s1[dc_index]
-
-    return result.reshape(1)
-
-
 def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
     """Second-order cumulant.
 
     ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
-    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``.
+    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``, with
+    ``F=runtime.band_max_idx - runtime.band_min_idx``.
 
     Returns a ``(F,)`` shaped spectrum.
     """
@@ -78,7 +64,8 @@ def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Te
     """Third-order cumulant.
 
     ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
-    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``.
+    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``, with
+    ``F=runtime.band_max_idx - runtime.band_min_idx``.
     ``centered_z`` is the precomputed, centered ``(F, F)`` grid of Fourier coefficients for the
     third component of the cumulant.
 
@@ -100,7 +87,7 @@ def c4_factorized(
 
     ``centered_x``, ``centered_y``, ``centered_z``, and ``centered_w`` are the Fourier coefficients
     of the specified user band with the mean (calculated over the m windows) subtracted and have
-    shape ``(m, F)``.
+    shape ``(m, F)``, with ``F=runtime.band_max_idx - runtime.band_min_idx``.
     
     Returns a ``(F, F)`` shaped spectrum. ``centered_x`` and ``centered_y`` are varied in the first
     component of the result and ``centered_z`` and ``centered_z`` are varied in the second component
