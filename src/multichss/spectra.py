@@ -126,10 +126,10 @@ def compute_single_spectrum(
     if order == 1:
         a_w = intermediate_buffer.coeffs_by_channel[channels[0]]
         dc_index = a_w.shape[1] // 2
-        single_spectrum = torch.mean(a_w[:, dc_index], dim=0).reshape(1)
+        single_cumulant = torch.mean(a_w[:, dc_index], dim=0).reshape(1)
 
     elif order == 2:
-        single_spectrum = c2_factorized(
+        single_cumulant = c2_factorized(
             runtime.m,
             intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
             intermediate_buffer.centered_coeffs_by_channel_band(channels[1], conjugated=True),
@@ -138,18 +138,18 @@ def compute_single_spectrum(
     elif order == 3:
         prepared = intermediate_buffer.centered_c3_third_factor_by_channel(channels[2])
 
-        single_spectrum = c3_factorized(
+        single_cumulant = c3_factorized(
             runtime.m,
             intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
             intermediate_buffer.centered_coeffs_by_channel_band(channels[1]),
             prepared.centered_a_w3,
         )
 
-        nan_value = torch.full_like(single_spectrum, complex(float("nan"), 0.0))
-        single_spectrum = torch.where(prepared.valid_mask, single_spectrum, nan_value)
+        nan_value = torch.full_like(single_cumulant, complex(float("nan"), 0.0))
+        single_cumulant = torch.where(prepared.valid_mask, single_cumulant, nan_value)
 
     elif order == 4:
-        single_spectrum = c4_factorized(
+        single_cumulant = c4_factorized(
             runtime.m,
             intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
             intermediate_buffer.centered_coeffs_by_channel_band(channels[1], conjugated=True),
@@ -159,4 +159,4 @@ def compute_single_spectrum(
     else:
         raise ValueError(f"Unsupported spectrum order: {order}.")
 
-    return single_spectrum / window_buffer.norm(order)
+    return single_cumulant / window_buffer.norm(order)

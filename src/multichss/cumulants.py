@@ -49,6 +49,8 @@ def _mean_outer(m: int, a: Tensor, b: Tensor) -> Tensor:
 def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
     """Second-order cumulant.
 
+        C2(x, y) = m/(m-1) * ((x-x.mean)*(y-y.mean)).mean
+
     ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
     the mean (calculated over the m windows) subtracted and have shape ``(m, F)``, with
     ``F=runtime.band_max_idx - runtime.band_min_idx``.
@@ -62,6 +64,8 @@ def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
 
 def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor) -> Tensor:
     """Third-order cumulant.
+
+        C3(x, y) = (m^2)/((m-1)(m-2)) * ((x-x.mean)*(y-y.mean)*(z-z.mean)).mean
 
     ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
     the mean (calculated over the m windows) subtracted and have shape ``(m, F)``, with
@@ -84,6 +88,16 @@ def c4_factorized(
     m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor, centered_w: Tensor
 ) -> Tensor:
     """Fourth-order cumulant.
+
+        C4(x, y) = (m^2)/((m-1)(m-2)(m-3)) 
+                    * ((m+1) * ((x-x.mean)*(y-y.mean)*(z-z.mean)*(w-w.mean)).mean
+                        -(m-1) *(
+                                (((x-x.mean)*(y-y.mean)).mean * ((z-z.mean)*(w-w.mean)).mean)
+                                +(((x-x.mean)*(z-z.mean)).mean * ((y-y.mean)*(w-w.mean)).mean)
+                                +(((x-x.mean)*(w-w.mean)).mean * ((y-y.mean)*(z-z.mean)).mean)
+                        )
+                    
+                    )
 
     ``centered_x``, ``centered_y``, ``centered_z``, and ``centered_w`` are the Fourier coefficients
     of the specified user band with the mean (calculated over the m windows) subtracted and have
