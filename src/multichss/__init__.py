@@ -8,12 +8,11 @@
 from __future__ import annotations
 
 from .configurators import DataConfig, PlotConfig, SpectrumConfig
-from .pipelines import calculate_spectra
-from .planning import RuntimeConfig
+from .pipelines import calculate_spectra, plot_spectra
 __all__ = [
     "DataConfig",
     "PlotConfig",
-    "RuntimeConfig",
     "SpectrumConfig",
     "calculate_spectra",
+    "plot_spectra",
 ]

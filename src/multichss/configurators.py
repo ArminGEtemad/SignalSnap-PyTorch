@@ -76,8 +76,10 @@ class PlotConfig(BaseModel):
     ----------
     f_min, f_max : float
         Frequency range displayed in plots.
-    display_orders : list[int]
-        Spectrum orders to display.
+    spectra_channels : list[tuple[ChannelIndex, ...] | None = None
+        Specifies which (multi-channel) spectra will be shown. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index. If ``None``, all
+        available spectra will be plotted.
     significance : int
         Number of error estimates used to mark insignificant regions.
     arcsinh_scale : tuple[bool, float]
@@ -97,7 +99,18 @@ class PlotConfig(BaseModel):
     f_min: float
     f_max: float
 
-    display_orders: list[Annotated[int, Field(ge=1, le=4)]] = [1, 2, 3, 4]
+    spectra_channels: (
+        Annotated[
+            list[
+                tuple[ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
+                | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
+            ],
+            Field(min_length=1),
+        ]
+        | None
+    ) = None
     significance: Annotated[int, Field(gt=0)] = 1
     arcsinh_scale: tuple[bool, Annotated[float, Field(ge=0)]] = (False, 0.02)
     plot_format: Annotated[list[Literal["re", "im"]], Field(min_length=1)] = ["re", "im"]
@@ -123,6 +136,18 @@ class PlotConfig(BaseModel):
         if self.f_min >= self.f_max:
             raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
         return self
+    
+    @field_validator("spectra_channels", mode="before")
+    @classmethod
+    def validate_spectrum_request(cls, spectra_channels):
+        """
+        Check if spectra_channels contains duplicates.
+        """
+        if spectra_channels is not None:
+            if len(spectra_channels) != len(set(spectra_channels)):
+                raise ValueError("spectra_channels cannot contain duplicates.")
+
+        return spectra_channels
 
 
 class SpectrumConfig(BaseModel):
@@ -205,6 +230,14 @@ class SpectrumConfig(BaseModel):
     interlacing: bool = False
     old_window: bool = False
 
+    @model_validator(mode="after")
+    def validate_limits(self) -> SpectrumConfig:
+        if self.f_max is not None:
+            if self.f_min >= self.f_max:
+                raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
+        
+        return self
+
     @field_validator("spectra_channels", mode="before")
     @classmethod
     def validate_spectrum_request(cls, spectra_channels):
@@ -213,6 +246,6 @@ class SpectrumConfig(BaseModel):
         """
         if spectra_channels is not None:
             if len(spectra_channels) != len(set(spectra_channels)):
-                raise ValueError("spectrum_channels cannot contain duplicates.")
+                raise ValueError("spectra_channels cannot contain duplicates.")
 
         return spectra_channels

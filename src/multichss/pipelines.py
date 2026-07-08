@@ -7,15 +7,28 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .aggregator import accumulate_spectrum, finalize_result
-from .configurators import DataConfig, SpectrumConfig
+from .configurators import DataConfig, PlotConfig, SpectrumConfig
 from .fft import compute_fft, iter_window_slices, prepare_window, reshape_window_chunk, to_device
 from .planning import build_runtime_config, initialize_result_store
+from .plotting import (
+    plot_order_1,
+    plot_order_2,
+    plot_order_3_or_4,
+    select_plot_results,
+    split_results_by_order,
+)
+from .results import SpectrumResultStore
 from .spectra import (
     build_intermediate_slice_buffer,
     build_third_order_cache,
     compute_single_spectrum,
 )
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 
 def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]):
@@ -72,3 +85,26 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
         finalize_result(result)
 
     return result_store
+
+
+def plot_spectra(plot_config: PlotConfig, result_store: SpectrumResultStore)-> list[Figure]:
+    """Plot calculated polyspectra from a SpectrumResultStore."""
+
+    results = select_plot_results(plot_config, result_store)
+    grouped_results = split_results_by_order(results)
+
+    figures = []
+
+    if grouped_results[1]:
+        plot_order_1(grouped_results[1], plot_config)
+
+    if grouped_results[2]:
+        figures.extend(plot_order_2(grouped_results[2], plot_config))
+
+    if grouped_results[3]:
+        figures.extend(plot_order_3_or_4(grouped_results[3], plot_config, order=3))
+
+    if grouped_results[4]:
+        figures.extend(plot_order_3_or_4(grouped_results[4], plot_config, order=4))
+
+    return figures
