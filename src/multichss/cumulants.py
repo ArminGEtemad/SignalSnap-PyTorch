@@ -31,58 +31,94 @@ def build_s3_target_indices(axis_indices: Tensor, fft_freq_count: int) -> tuple[
 
 
 def gather_s3_third_factor(coeffs: Tensor, target_indices: Tensor, m: int) -> Tensor:
-    """Gather a(w3) for w3 = -(w1 + w2), returning shape (F, F, m)."""
-    coeffs_by_freq = coeffs.permute(1, 2, 0)  # (N, 1, m)
-    return coeffs_by_freq[target_indices, 0, :m]
+    """Gather a(w3) for w3 = -(w1 + w2), returning shape (m, F, F)."""
+    return coeffs[:m, target_indices]
+
+
+def _mean_outer(m: int, a: Tensor, b: Tensor) -> Tensor:
+    """
+    Computes the average outer product over the window axis (frist axis).
+
+    ``a`` and ``b`` are Tensors of shape ``(m, F)``. 
+    Returns a ``(F, F)`` Tensor: result[f, g] = (1/m)* sum_i a[i, f] * b[i, g], so for every window 
+    with index ``i`` the ``(F, F)`` grid is computed and at the end the windows are averaged.
+    """
+    return torch.einsum("mf,mg->fg", a, b) / m
 
 
 def c1(a_w: Tensor) -> Tensor:
     """First-order cumulant.
 
 
-    ``a_w`` has shape ``(m, F, 1)`` with ``F = runtime.band_end_idx - runtime.band_start_idx``. The
-    returned tensor has shape ``(1,)`` and contains the DC component: index 0 for real FFT input, or
-    the center frequency for full FFT input.
+    ``a_w`` has shape ``(m, N)`` with ``N = runtime.window_points``. The returned tensor has shape
+    ``(1,)`` and contains the DC component which is the center frequency for a full FFT input.
     """
 
     s1 = torch.mean(a_w, dim=0)
     dc_index = s1.shape[0] // 2
     result = s1[dc_index]
 
-    return result
+    return result.reshape(1)
 
 
 def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
+    """Second-order cumulant.
+
+    ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
+    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``.
+
+    Returns a ``(F,)`` shaped spectrum.
+    """
+
     s2 = m / (m - 1) * torch.mean(centered_x * centered_y, dim=0)
-    return s2.squeeze(-1)
+    return s2
 
 
 def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor) -> Tensor:
-    s3 = m**2 / ((m - 1) * (m - 2)) * torch.mean(centered_x * centered_y * centered_z, dim=0)
-    return s3.squeeze(-1)
+    """Third-order cumulant.
+
+    ``centered_x`` and ``centered_y`` are the Fourier coefficients of the specified user band with
+    the mean (calculated over the m windows) subtracted and have shape ``(m, F)``.
+    ``centered_z`` is the precomputed, centered ``(F, F)`` grid of Fourier coefficients for the
+    third component of the cumulant.
+
+    Returns a ``(F, F)`` shaped spectrum.
+    """
+
+    s3 = (
+        m**2
+        / ((m - 1) * (m - 2))
+        * torch.mean(centered_x[:, None, :] * centered_y[:, :, None] * centered_z, dim=0)
+    )
+    return s3
 
 
 def c4_factorized(
     m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor, centered_w: Tensor
 ) -> Tensor:
+    """Fourth-order cumulant.
+
+    ``centered_x``, ``centered_y``, ``centered_z``, and ``centered_w`` are the Fourier coefficients
+    of the specified user band with the mean (calculated over the m windows) subtracted and have
+    shape ``(m, F)``.
+    
+    Returns a ``(F, F)`` shaped spectrum. ``centered_x`` and ``centered_y`` are varied in the first
+    component of the result and ``centered_z`` and ``centered_z`` are varied in the second component
+    of the result.
+    """
+
+    centered_xy = centered_x * centered_y
+    centered_zw = centered_z * centered_w
     s4 = (
         m**2
         / ((m - 1) * (m - 2) * (m - 3))
         * (
-            (m + 1)
-            * torch.matmul(
-                centered_x * centered_y, (centered_z * centered_w).transpose(-1, -2)
-            ).mean(dim=0)
+            (m + 1) * _mean_outer(m, centered_xy, centered_zw)
             - (m - 1)
             * (
-                torch.matmul(
-                    (centered_x * centered_y).mean(dim=0),
-                    (centered_z * centered_w).mean(dim=0).transpose(-1, -2),
-                )
-                + torch.matmul(centered_x, centered_z.transpose(-1, -2)).mean(dim=0)
-                * torch.matmul(centered_y, centered_w.transpose(-1, -2)).mean(dim=0)
-                + torch.matmul(centered_x, centered_w.transpose(-1, -2)).mean(dim=0)
-                * torch.matmul(centered_y, centered_z.transpose(-1, -2)).mean(dim=0)
+                torch.outer(centered_xy.mean(dim=0), centered_zw.mean(dim=0))
+                + _mean_outer(m, centered_x, centered_z) * _mean_outer(m, centered_y, centered_w)
+                + _mean_outer(m, centered_x, centered_w) * _mean_outer(m, centered_y, centered_z)
             )
         )
     )

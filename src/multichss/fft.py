@@ -73,6 +73,7 @@ def _old_cg_window(
 
     return window_full
 
+
 ### -------------
 # end of old code
 ### -------------
@@ -84,13 +85,13 @@ class WindowBuffer:
     Stores all information related to the window function, so these dont need to be computed
     repeatedly.
     """
-    single: Tensor
-    repeated: Tensor
+
+    window: Tensor
     norm_all_orders: tuple[Tensor, Tensor, Tensor, Tensor]
 
     def norm(self, order: int) -> Tensor:
         return self.norm_all_orders[order - 1]
-    
+
 
 def _gaussian(x: Tensor, N: int, sigma_t_prefactor: float) -> Tensor:
     """
@@ -150,16 +151,6 @@ def acG_window_func(
     return acG_k / torch.max(acG_k)
 
 
-def to_device(array: np.ndarray, runtime: RuntimeConfig) -> Tensor:
-    """Convert a NumPy array to a torch tensor using the runtime dtype and device.
-
-    The input shape is preserved. In the main calculation pipeline this is typically called with a
-    reshaped signal chunk of shape ``(m, N, 1)``.
-    """
-
-    return torch.as_tensor(array, dtype=runtime.real_dtype, device=runtime.device)
-
-
 def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor:
     """Window a signal chunk and compute its Fourier coefficients.
 
@@ -169,16 +160,16 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
     Parameters
     ----------
     chunk : Tensor
-        Real-valued signal chunk with shape ``(m, N, 1)``.
+        Real-valued signal chunk with shape ``(m, N)``.
     window : Tensor
-        Window tensor with shape ``(m, N, 1)``.
+        Window tensor with shape ``(N,)``.
     runtime : RuntimeConfig
         Runtime settings defining FFT mode, sample spacing, and dtypes.
 
     Returns
     -------
     Tensor
-        Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N, 1)``.
+        Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N)``.
     """
 
     coeffs = torch.fft.ifft(window * chunk, dim=1, norm="forward")
@@ -199,28 +190,26 @@ def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
     """
 
     if runtime.old_window:
-        single_window = _old_cg_window(
+        window = _old_cg_window(
             runtime.window_points,
             fs=1,
             torch_device=runtime.device,
             dtype=runtime.real_dtype,
         )
     else:
-        single_window = acG_window_func(
+        window = acG_window_func(
             runtime.window_points,
             torch_device=runtime.device,
             dtype=runtime.real_dtype,
         )
 
-    repeated_window = single_window.reshape(1, runtime.window_points, 1).repeat(runtime.m, 1, 1)
     return WindowBuffer(
-        single=single_window,
-        repeated=repeated_window,
+        window=window,
         norm_all_orders=(
-            runtime.dt * single_window.sum(),
-            runtime.dt * (single_window**2).sum(),
-            runtime.dt * (single_window**3).sum(),
-            runtime.dt * (single_window**4).sum(),
+            runtime.dt * window.sum(),
+            runtime.dt * (window**2).sum(),
+            runtime.dt * (window**3).sum(),
+            runtime.dt * (window**4).sum(),
         ),
     )
 
@@ -264,7 +253,7 @@ def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarra
     Returns
     -------
     np.ndarray
-        Reshaped chunk with shape ``(m, N, 1)``.
+        Reshaped chunk with shape ``(m, N)``.
     """
 
     expected_size = runtime.window_points * runtime.m
@@ -272,4 +261,14 @@ def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarra
     if chunk.shape[0] != expected_size:
         raise ValueError(f"Expected chunk with {expected_size} samples, got {chunk.shape[0]}.")
 
-    return chunk.reshape(runtime.m, runtime.window_points, 1)
+    return chunk.reshape(runtime.m, runtime.window_points)
+
+
+def to_device(array: np.ndarray, runtime: RuntimeConfig) -> Tensor:
+    """Convert a NumPy array to a torch tensor using the runtime dtype and device.
+
+    The input shape is preserved. In the main calculation pipeline this is typically called with a
+    reshaped signal chunk of shape ``(m, N)``.
+    """
+
+    return torch.as_tensor(array, dtype=runtime.real_dtype, device=runtime.device)

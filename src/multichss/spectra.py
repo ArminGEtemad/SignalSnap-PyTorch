@@ -52,7 +52,7 @@ class IntermediateSliceBuffer:
 
     def centered_coeffs_by_channel_band(self, channel: int) -> Tensor:
         if channel not in self._centered_coeffs_by_channel_band:
-            coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx, :]
+            coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx]
             self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
         return self._centered_coeffs_by_channel_band[channel]
 
@@ -111,7 +111,7 @@ def compute_single_spectrum(
     normalization.
 
     ``coeffs_by_channel`` maps each channel index to shifted full-FFT coefficients with shape
-    ``(m, N, 1)``. The selected frequency band has length
+    ``(m, N)``. The selected frequency band has length
     ``F = runtime.band_end_idx - runtime.band_start_idx``.
 
     Returns a conjugated, window-normalized spectrum. Output shape depends on order: order 1 returns
@@ -132,21 +132,12 @@ def compute_single_spectrum(
 
     elif order == 3:
         prepared = intermediate_buffer.centered_c3_third_factor_by_channel(channels[2])
-        centered_x = intermediate_buffer.centered_coeffs_by_channel_band(channels[0])
-        centered_y = intermediate_buffer.centered_coeffs_by_channel_band(channels[1])
-        centered_z = prepared.centered_a_w3
-
-        centered_x = centered_x.transpose(-1, -2).expand(
-            centered_x.size(0), centered_y.size(1), centered_x.size(1)
-        )
-        centered_y = centered_y.expand(centered_y.size(0), centered_y.size(1), centered_x.size(2))
-        centered_z = centered_z.permute(2, 0, 1)
 
         single_spectrum = c3_factorized(
             runtime.m,
-            centered_x,
-            centered_y,
-            centered_z,
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[1]),
+            prepared.centered_a_w3,
         )
 
         nan_value = torch.full_like(single_spectrum, complex(float("nan"), 0.0))

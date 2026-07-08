@@ -52,7 +52,7 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
             data = data_config_list[channel].data[start:end]
             chunk = reshape_window_chunk(data, runtime)
             chunk = to_device(chunk, runtime)
-            coeffs_by_channel[channel] = compute_fft(chunk, window_buffer.repeated, runtime)
+            coeffs_by_channel[channel] = compute_fft(chunk, window_buffer.window, runtime)
 
         intermediate_buffer = build_intermediate_slice_buffer(
             runtime, coeffs_by_channel, third_order_cache
