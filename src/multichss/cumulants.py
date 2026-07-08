@@ -13,11 +13,12 @@ from torch import Tensor
 
 def build_s3_target_indices(axis_indices: Tensor, fft_freq_count: int) -> tuple[Tensor, Tensor]:
     """Map output-axis bins (w1, w2) to the shifted-FFT bin for w3 = -(w1 + w2).
-    safe_indices is a 2D grid based on (w1, w2) which includes the corresponding indices of the
+    ``safe_indices`` is a 2D grid based on (w1, w2) which includes the corresponding indices of the
     shifted fft array for w3. Every w1 + w2 that is out of bounds will receive index 0.
-    valid_mask is a 2D grid containing ``True`` when w1 + w2 is a valid frequency and ``False`` 
+    ``valid_mask`` is a 2D grid containing ``True`` when w1 + w2 is a valid frequency and ``False``
     otherwise, which can later be used to delete any values that were computed out of bounds.
     """
+
     zero_idx = fft_freq_count // 2
     axis_offsets = axis_indices - zero_idx
 
@@ -37,8 +38,8 @@ def gather_s3_third_factor(coeffs: Tensor, target_indices: Tensor, m: int) -> Te
 
 def c1(a_w: Tensor) -> Tensor:
     """First-order cumulant.
-    
-    
+
+
     ``a_w`` has shape ``(m, F, 1)`` with ``F = runtime.band_end_idx - runtime.band_start_idx``. The
     returned tensor has shape ``(1,)`` and contains the DC component: index 0 for real FFT input, or
     the center frequency for full FFT input.
@@ -51,136 +52,38 @@ def c1(a_w: Tensor) -> Tensor:
     return result
 
 
-def c2(m: int, a_w1: Tensor, a_w2: Tensor) -> Tensor:
-    """Second-order cumulant is the covariance.
-    
-    ``a_w1`` and ``a_w2`` must both have the same shape ``(m, X, 1)``. The returned tensor has shape
-    ``(X,)``.
-    """
-
-    a_w2_star = torch.conj(a_w2)
-
-    factor = m / (m - 1)
-    term_1 = torch.mean(a_w1 * a_w2_star, dim=0)
-    term_2 = torch.mean(a_w1, dim=0) * torch.mean(a_w2_star, dim=0)
-    s2 = factor * (term_1 - term_2)
+def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
+    s2 = m / (m - 1) * torch.mean(centered_x * centered_y, dim=0)
     return s2.squeeze(-1)
 
 
-def c3(m: int, a_w1: Tensor, a_w2: Tensor, a_w3: Tensor) -> Tensor:
-    """
-    Third-order cumulant::
+def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor) -> Tensor:
+    s3 = m**2 / ((m - 1) * (m - 2)) * torch.mean(centered_x * centered_y * centered_z, dim=0)
+    return s3.squeeze(-1)
 
-        C_3 = m^2 / [(m - 1) * (m - 2)] * {
-                < a_w1 * a_w2 * a_w3 >
-                - < a_w1 >< a_w2 * a_w3 > - < a_w1 * a_w2 >< a_w3 > - < a_w1 * a_w3 >< a_w2 >
-                + 2 < a_w1 >< a_w2 >< a_w3 >
-            }
-    
-    with w3 = - w1 - w2 and as before <...> denotes the mean and the factor m^2 / (m - 1)(m - 2) is
-    the unbiased estimator for the third order cumulant. ``m`` is the number of windows per spectral 
-    estimate. The estimator requires ``m > 2``.
-    (see arXiv:1904.12154)
-    """
 
-    a_w1_modified = a_w1.transpose(-1, -2)
-    a_w1_modified_stacked = a_w1_modified.expand(
-        a_w1_modified.size(0), a_w2.size(1), a_w1_modified.size(2)
-    )
-
-    a_w2_modified_stacked = a_w2.expand((a_w2.size(0), a_w2.size(1), a_w1.size(1)))
-
-    a_w3_modified = a_w3.permute(2, 0, 1)
-
-    d_12 = a_w1_modified_stacked * a_w2_modified_stacked
-    d_13 = a_w1_modified_stacked * a_w3_modified
-    d_23 = a_w2_modified_stacked * a_w3_modified
-    d_123 = d_12 * a_w3_modified
-
-    d_means = [
-        torch.mean(d, dim=0)
-        for d in [
-            a_w1_modified_stacked,
-            a_w2_modified_stacked,
-            a_w3_modified,
-            d_12,
-            d_13,
-            d_23,
-            d_123,
-        ]
-    ]
-
-    d_1_mean, d_2_mean, d_3_mean, d_12_mean, d_13_mean, d_23_mean, d_123_mean = d_means
-    s3 = (
+def c4_factorized(
+    m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor, centered_w: Tensor
+) -> Tensor:
+    s4 = (
         m**2
-        / ((m - 1) * (m - 2))
+        / ((m - 1) * (m - 2) * (m - 3))
         * (
-            d_123_mean
-            - d_12_mean * d_3_mean
-            - d_13_mean * d_2_mean
-            - d_23_mean * d_1_mean
-            + 2 * d_1_mean * d_2_mean * d_3_mean
+            (m + 1)
+            * torch.matmul(
+                centered_x * centered_y, (centered_z * centered_w).transpose(-1, -2)
+            ).mean(dim=0)
+            - (m - 1)
+            * (
+                torch.matmul(
+                    (centered_x * centered_y).mean(dim=0),
+                    (centered_z * centered_w).mean(dim=0).transpose(-1, -2),
+                )
+                + torch.matmul(centered_x, centered_z.transpose(-1, -2)).mean(dim=0)
+                * torch.matmul(centered_y, centered_w.transpose(-1, -2)).mean(dim=0)
+                + torch.matmul(centered_x, centered_w.transpose(-1, -2)).mean(dim=0)
+                * torch.matmul(centered_y, centered_z.transpose(-1, -2)).mean(dim=0)
+            )
         )
     )
-
-    return s3
-
-
-def c4(m: int, a_w1: Tensor, a_w2: Tensor, a_w3: Tensor, a_w4: Tensor) -> Tensor:
-    """
-    Fourth-order cumulant::
-
-        C_4 = m^2 / [(m - 1) * (m - 2) * (m - 3)] * {
-                (m + 1) * <(a_w1 - <a_w1>) * (a_w2 - <a_w2>) * (a_w3 - <a_w3>) * (a_w4 - <a_w4>)>
-                -(m - 1) * [
-                           <(a_w1 - <a_w1>) * (a_w2 - <a_w2>)> * <(a_w3 - <a_w3>) * (a_w4 - <a_w4>)>
-                           + 2 o.p.
-                ]
-            }
-    
-    <...> denotes the mean. ``m`` is the number of windows per spectral 
-    estimate. The estimator requires ``m > 3``.
-    (see arXiv:1904.12154)
-
-    All input tensors must have shape ``(m, F, 1)``, where 
-    ``F = runtime.band_end_idx - runtime.band_start_idx`` is the selected frequency-band length.
-    The returned tensor has shape ``(F, F)``.
-
-    The second and fourth inputs are conjugated internally, matching the convention used for 
-    fourth-order auto- and cross-spectra.
-    """
-
-    # --- for a better readability ---
-    x = a_w1
-    y = torch.conj(a_w2)
-    z = a_w3
-    w = torch.conj(a_w4)
-    # --------------------------------
-
-    x_mean = x - x.mean(dim=0, keepdim=True)
-    y_mean = y - y.mean(dim=0, keepdim=True)
-    z_mean = z - z.mean(dim=0, keepdim=True)
-    w_mean = w - w.mean(dim=0, keepdim=True)
-
-    # Compute product and various partial means
-    xyzw = torch.matmul((x_mean * y_mean), (z_mean * w_mean).transpose(-1, -2))
-    xyzw_mean = xyzw.mean(dim=0)
-
-    xy_mean = (x_mean * y_mean).mean(dim=0)
-    zw_mean = (z_mean * w_mean).mean(dim=0)
-    xy_zw_mean = torch.matmul(xy_mean, zw_mean.transpose(-1, -2))
-
-    xz_mean = torch.matmul(x_mean, z_mean.transpose(-1, -2)).mean(dim=0)
-    yw_mean = torch.matmul(y_mean, w_mean.transpose(-1, -2)).mean(dim=0)
-    xz_yw_mean = xz_mean * yw_mean
-
-    xw_mean = torch.matmul(x_mean, w_mean.transpose(-1, -2)).mean(dim=0)
-    yz_mean = torch.matmul(y_mean, z_mean.transpose(-1, -2)).mean(dim=0)
-    xw_yz_mean = xw_mean * yz_mean
-
-    # Final combination
-    s4 = (m**2 / ((m - 1) * (m - 2) * (m - 3))) * (
-        (m + 1) * xyzw_mean - (m - 1) * (xy_zw_mean + xz_yw_mean + xw_yz_mean)
-    )
-
     return s4

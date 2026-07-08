@@ -12,7 +12,14 @@ from dataclasses import dataclass, field
 import torch
 from torch import Tensor
 
-from .cumulants import build_s3_target_indices, c1, c2, c3, c4, gather_s3_third_factor
+from .cumulants import (
+    build_s3_target_indices,
+    c1,
+    c2_factorized,
+    c3_factorized,
+    c4_factorized,
+    gather_s3_third_factor,
+)
 from .fft import WindowBuffer
 from .planning import RuntimeConfig
 
@@ -25,7 +32,7 @@ class ThirdOrderIndexCache:
 
 @dataclass(slots=True)
 class ThirdOrderFactor:
-    a_w3: Tensor
+    centered_a_w3: Tensor
     valid_mask: Tensor
 
 
@@ -40,34 +47,31 @@ class IntermediateSliceBuffer:
     coeffs_by_channel: dict[int, Tensor] = field(default_factory=dict)
     third_order_cache: ThirdOrderIndexCache | None = None
 
-    _coeffs_by_channel_band: dict[int, Tensor] = field(default_factory=dict)
-    _c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(
-        default_factory=dict
-    )
+    _centered_coeffs_by_channel_band: dict[int, Tensor] = field(default_factory=dict)
+    _centered_c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(default_factory=dict)
 
-    def coeffs_by_channel_band(self, channel: int) -> Tensor:
-        if channel not in self._coeffs_by_channel_band:
-            self._coeffs_by_channel_band[channel] = self.coeffs_by_channel[channel][
-                :, self.band_start_idx : self.band_end_idx, :
-            ]
-        return self._coeffs_by_channel_band[channel]
+    def centered_coeffs_by_channel_band(self, channel: int) -> Tensor:
+        if channel not in self._centered_coeffs_by_channel_band:
+            coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx, :]
+            self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
+        return self._centered_coeffs_by_channel_band[channel]
 
-    def c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
-        if channel not in self._c3_third_factor_by_channel:
+    def centered_c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
+        if channel not in self._centered_c3_third_factor_by_channel:
             if self.third_order_cache is None:
                 raise ValueError("Third-order spectra require third_order_cache.")
-            a_w3 = gather_s3_third_factor(
-                self.coeffs_by_channel[channel],
+            centered_a_w3 = gather_s3_third_factor(
+                self.coeffs_by_channel[channel]
+                - torch.mean(self.coeffs_by_channel[channel], dim=0),
                 self.third_order_cache.target_indices,
                 self.m,
             )
-
-            self._c3_third_factor_by_channel[channel] = ThirdOrderFactor(
-                a_w3=a_w3,
+            self._centered_c3_third_factor_by_channel[channel] = ThirdOrderFactor(
+                centered_a_w3=centered_a_w3,
                 valid_mask=self.third_order_cache.valid_mask,
             )
 
-        return self._c3_third_factor_by_channel[channel]
+        return self._centered_c3_third_factor_by_channel[channel]
 
 
 def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderIndexCache:
@@ -120,34 +124,43 @@ def compute_single_spectrum(
         single_spectrum = c1(intermediate_buffer.coeffs_by_channel[channels[0]])
 
     elif order == 2:
-        single_spectrum = c2(
+        single_spectrum = c2_factorized(
             runtime.m,
-            intermediate_buffer.coeffs_by_channel_band(channels[0]),
-            intermediate_buffer.coeffs_by_channel_band(channels[1]),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
+            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[1])),
         )
 
     elif order == 3:
-        prepared = intermediate_buffer.c3_third_factor_by_channel(channels[2])
-        single_spectrum = c3(
+        prepared = intermediate_buffer.centered_c3_third_factor_by_channel(channels[2])
+        centered_x = intermediate_buffer.centered_coeffs_by_channel_band(channels[0])
+        centered_y = intermediate_buffer.centered_coeffs_by_channel_band(channels[1])
+        centered_z = prepared.centered_a_w3
+
+        centered_x = centered_x.transpose(-1, -2).expand(
+            centered_x.size(0), centered_y.size(1), centered_x.size(1)
+        )
+        centered_y = centered_y.expand(centered_y.size(0), centered_y.size(1), centered_x.size(2))
+        centered_z = centered_z.permute(2, 0, 1)
+
+        single_spectrum = c3_factorized(
             runtime.m,
-            intermediate_buffer.coeffs_by_channel_band(channels[0]),
-            intermediate_buffer.coeffs_by_channel_band(channels[1]),
-            prepared.a_w3,
+            centered_x,
+            centered_y,
+            centered_z,
         )
 
         nan_value = torch.full_like(single_spectrum, complex(float("nan"), 0.0))
         single_spectrum = torch.where(prepared.valid_mask, single_spectrum, nan_value)
 
     elif order == 4:
-        single_spectrum = c4(
+        single_spectrum = c4_factorized(
             runtime.m,
-            intermediate_buffer.coeffs_by_channel_band(channels[0]),
-            intermediate_buffer.coeffs_by_channel_band(channels[1]),
-            intermediate_buffer.coeffs_by_channel_band(channels[2]),
-            intermediate_buffer.coeffs_by_channel_band(channels[3]),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[0]),
+            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[1])),
+            intermediate_buffer.centered_coeffs_by_channel_band(channels[2]),
+            torch.conj(intermediate_buffer.centered_coeffs_by_channel_band(channels[3])),
         )
-
     else:
         raise ValueError(f"Unsupported spectrum order: {order}.")
 
-    return torch.conj(single_spectrum / window_buffer.norm(order))
+    return single_spectrum / window_buffer.norm(order)

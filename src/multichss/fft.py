@@ -163,6 +163,9 @@ def to_device(array: np.ndarray, runtime: RuntimeConfig) -> Tensor:
 def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor:
     """Window a signal chunk and compute its Fourier coefficients.
 
+    ``coeffs`` is computed via the ifft with forward normalization, since the SignalSnap paper uses
+    the opposite sign convention for the Fourier transform compared to pytorch.
+
     Parameters
     ----------
     chunk : Tensor
@@ -178,7 +181,7 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
         Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N, 1)``.
     """
 
-    coeffs = torch.fft.fft(window * chunk, dim=1)
+    coeffs = torch.fft.ifft(window * chunk, dim=1, norm="forward")
     coeffs = torch.fft.fftshift(coeffs, dim=1)
 
     return coeffs * runtime.dt
