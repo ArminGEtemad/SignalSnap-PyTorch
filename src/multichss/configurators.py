@@ -8,11 +8,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, DirectoryPath, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .utils import ChannelIndex, TimeUnits
 
@@ -69,17 +68,13 @@ class DataConfig(BaseModel):
         return v
 
 
-class PlotConfig(BaseModel):
+class PlotStyle(BaseModel):
     """Configuration for plotting calculated polyspectra.
 
     Attributes
     ----------
     f_min, f_max : float
         Frequency range displayed in plots.
-    spectra_channels : list[tuple[ChannelIndex, ...] | None = None
-        Specifies which (multi-channel) spectra will be shown. Each tuple represents one auto-
-        or cross-correlation spectrum. Each tuple entry is a channel index. If ``None``, all
-        available spectra will be plotted.
     significance : int
         Number of error estimates used to mark insignificant regions.
     arcsinh_scale : tuple[bool, float]
@@ -88,10 +83,6 @@ class PlotConfig(BaseModel):
         Spectrum components to plot.
     insignif_transparency : float
         Overlay opacity for values below the configured significance threshold.
-    output : Literal["show", "save"]
-        Whether plots are shown interactively or saved.
-    output_folder : DirectoryPath
-        Destination folder used when ``output="save"``.
     """
 
     model_config = SHARED_CONFIG
@@ -99,24 +90,10 @@ class PlotConfig(BaseModel):
     f_min: float
     f_max: float
 
-    spectra_channels: (
-        Annotated[
-            list[
-                tuple[ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
-            ],
-            Field(min_length=1),
-        ]
-        | None
-    ) = None
     significance: Annotated[int, Field(gt=0)] = 1
     arcsinh_scale: tuple[bool, Annotated[float, Field(ge=0)]] = (False, 0.02)
     plot_format: Annotated[list[Literal["re", "im"]], Field(min_length=1)] = ["re", "im"]
     insignif_transparency: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
-    output: Literal["show", "save"] = "show"
-    output_folder: DirectoryPath = Path(".").resolve()
 
     @field_validator("plot_format")
     @classmethod
@@ -126,28 +103,11 @@ class PlotConfig(BaseModel):
             raise ValueError("plot_format cannot contain duplicate elements.")
         return v
 
-    @field_validator("output_folder")
-    @classmethod
-    def resolve_output_folder(cls, v: Path) -> Path:
-        return v.resolve()
-
     @model_validator(mode="after")
-    def validate_limits(self) -> PlotConfig:
+    def validate_limits(self) -> PlotStyle:
         if self.f_min >= self.f_max:
             raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
         return self
-    
-    @field_validator("spectra_channels", mode="before")
-    @classmethod
-    def validate_spectrum_request(cls, spectra_channels):
-        """
-        Check if spectra_channels contains duplicates.
-        """
-        if spectra_channels is not None:
-            if len(spectra_channels) != len(set(spectra_channels)):
-                raise ValueError("spectra_channels cannot contain duplicates.")
-
-        return spectra_channels
 
 
 class SpectrumConfig(BaseModel):
@@ -235,7 +195,7 @@ class SpectrumConfig(BaseModel):
         if self.f_max is not None:
             if self.f_min >= self.f_max:
                 raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
-        
+
         return self
 
     @field_validator("spectra_channels", mode="before")

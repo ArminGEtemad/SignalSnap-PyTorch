@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -128,6 +129,9 @@ class SpectrumResultStore:
 
     results: dict[tuple[int, ...], SpectrumResult] = field(default_factory=dict)
 
+    def __iter__(self) -> Iterator[SpectrumResult]:
+        return iter(self.results.values())
+
     def get(self, channels: tuple[int, ...]) -> SpectrumResult:
         """Return the result for a channel tuple."""
         return self.results[channels]
@@ -145,3 +149,20 @@ class SpectrumResultStore:
         """Initialize frequency axes and units for every stored spectrum result."""
         for result in self.results.values():
             result.initialize_arrays(runtime)
+
+    def select(self, channels: list[tuple[int, ...]]) -> SpectrumResultStore:
+        """Return a new store containing the selected results.
+
+        The new store shares its SpectrumResult objects with this store.
+        """
+        selected = {}
+
+        for channel_tuple in channels:
+            try:
+                selected[channel_tuple] = self.results[channel_tuple]
+            except KeyError as exc:
+                raise ValueError(
+                    f"No spectrum result exists for channels {channel_tuple}."
+                ) from exc
+
+        return SpectrumResultStore(results=selected)

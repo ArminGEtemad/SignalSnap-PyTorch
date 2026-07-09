@@ -7,12 +7,17 @@
 
 from __future__ import annotations
 
-from .configurators import DataConfig, PlotConfig, SpectrumConfig
-from .pipelines import calculate_spectra, plot_spectra
+from .configurators import DataConfig, PlotStyle, SpectrumConfig
+from .pipelines import calculate_spectra
+from .plotting import SpectrumFigure, build_order_1_table, create_spectrum_figures, save_figures
+
 __all__ = [
     "DataConfig",
-    "PlotConfig",
+    "PlotStyle",
     "SpectrumConfig",
     "calculate_spectra",
-    "plot_spectra",
+    "build_order_1_table",
+    "create_spectrum_figures",
+    "save_figures",
+    "SpectrumFigure",
 ]
