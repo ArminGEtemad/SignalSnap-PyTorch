@@ -8,12 +8,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 
 import numpy as np
 import torch
 
 from .configurators import DataConfig, SpectrumConfig
-from .results import SpectrumResult, SpectrumResultStore
+from .results import SpectrumAccumulator, SpectrumAccumulatorStore
 from .utils import ChannelIndex, FrequencyUnits, TimeUnits, unit_conversion_time_to_freq
 
 
@@ -192,9 +193,10 @@ def build_runtime_config(
     required_points = window_points * spectrum_config.m
     if required_points > n_data_points:
         m = n_data_points // window_points
-        print(
-            "Values have been changed, because not enough data points were available."
-            f"Old m: {spectrum_config.m}, new m: {m}"
+        warnings.warn(
+            f"Not enough data points are available for m={spectrum_config.m}; using m={m} instead.",
+            UserWarning,
+            stacklevel=3,
         )
     else:
         m = spectrum_config.m
@@ -267,24 +269,25 @@ def build_runtime_config(
     )
 
 
-def initialize_result_store(runtime: RuntimeConfig) -> SpectrumResultStore:
-    """Create an initialized result store for a list of spectrum tasks.
+def initialize_accumulator_store(runtime: RuntimeConfig) -> SpectrumAccumulatorStore:
+    """Create an initialized :class:`SpectrumAccumulatorStore` for a list of spectrum tasks.
 
-    Each task is converted into a :class:`SpectrumResult` with matching channels.
+    Each task is converted into a :class:`SpectrumAccumulator` with matching channels.
 
     Parameters
     ----------
     runtime : :class:`RuntimeConfig`
-        :class:`RuntimeConfig` that contains all necessary information to initialize result arrays.
+        :class:`RuntimeConfig` that contains all necessary information to initialize a
+        :class:`SpectrumAccumulator`.
 
     Returns
     -------
-    SpectrumResultStore
-        Store containing one initialized :class:`SpectrumResult` per task.
+    SpectrumAccumulatorStore
+        Store containing one initialized :class:`SpectrumAccumulator` per task.
     """
 
-    store = SpectrumResultStore()
+    store = SpectrumAccumulatorStore()
     for channels in runtime.spectra_channels:
-        store.add(SpectrumResult(channels))
-    store.initialize_arrays(runtime)
+        freq = np.asarray([0.0]) if len(channels) == 1 else runtime.freq_band
+        store.add(SpectrumAccumulator(channels, freq=freq, freq_unit=runtime.freq_unit))
     return store

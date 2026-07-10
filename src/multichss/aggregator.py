@@ -7,87 +7,89 @@
 
 from __future__ import annotations
 
+import warnings
+
 import torch
 from torch import Tensor
 
-from .results import SpectrumResult
+from .results import SpectrumAccumulator, SpectrumResult
 
 
 def accumulate_spectrum(
-    result: SpectrumResult, single_spectrum: Tensor, shifted: bool = False
+    accumulator: SpectrumAccumulator, single_spectrum: Tensor, shifted: bool = False
 ) -> None:
-    """Accumulate one spectral estimate into the result object.
+    """Accumulate one spectral estimate into the :class:`SpectrumAccumulator`.
 
-    Adds the spectral estimate to the running mean accumulator and stores running sums of squared
+    Adds the spectral estimate to the running sum and stores running sums of squared
     real and imaginary components used later to estimate the standard error of the mean. Spectral
     estimates and the squared component are accumulated separately for shifted and unshifted data.
     """
 
-    if result.freq is None:
-        raise ValueError("SpectrumResult must be initialized before accumulation.")
-
     if not shifted:
-        if result.spectrum_accumulator_unshifted is None:
-            result.spectrum_accumulator_unshifted = single_spectrum.clone()
+        if accumulator.spectrum_sum_unshifted is None:
+            accumulator.spectrum_sum_unshifted = single_spectrum.clone()
         else:
-            result.spectrum_accumulator_unshifted += single_spectrum
+            accumulator.spectrum_sum_unshifted += single_spectrum
 
-        if result.error_accumulator_x_squared_unshifted is None:
-            result.error_accumulator_x_squared_unshifted = torch.complex(
+        if accumulator.squared_sum_unshifted is None:
+            accumulator.squared_sum_unshifted = torch.complex(
                 torch.square(single_spectrum.real), torch.square(single_spectrum.imag)
             )
         else:
-            result.error_accumulator_x_squared_unshifted += torch.complex(
+            accumulator.squared_sum_unshifted += torch.complex(
                 torch.square(single_spectrum.real), torch.square(single_spectrum.imag)
             )
 
-        result.chunks_processed_unshifted += 1
+        accumulator.chunks_unshifted += 1
 
     else:
-        if result.spectrum_accumulator_shifted is None:
-            result.spectrum_accumulator_shifted = single_spectrum.clone()
+        if accumulator.spectrum_sum_shifted is None:
+            accumulator.spectrum_sum_shifted = single_spectrum.clone()
         else:
-            result.spectrum_accumulator_shifted += single_spectrum
+            accumulator.spectrum_sum_shifted += single_spectrum
 
-        if result.error_accumulator_x_squared_shifted is None:
-            result.error_accumulator_x_squared_shifted = torch.complex(
+        if accumulator.squared_sum_shifted is None:
+            accumulator.squared_sum_shifted = torch.complex(
                 torch.square(single_spectrum.real), torch.square(single_spectrum.imag)
             )
         else:
-            result.error_accumulator_x_squared_shifted += torch.complex(
+            accumulator.squared_sum_shifted += torch.complex(
                 torch.square(single_spectrum.real), torch.square(single_spectrum.imag)
             )
 
-        result.chunks_processed_shifted += 1
+        accumulator.chunks_shifted += 1
 
-def _check_result_group(
-    spectrum_accumulator: Tensor | None,
-    error_accumulator_x_squared: Tensor | None,
-    chunks_processed: int,
+
+def _check_accumulator_group(
+    spectrum_sum: Tensor | None,
+    squared_sum: Tensor | None,
+    chunks: int,
 ) -> tuple[Tensor, Tensor, int] | None:
-    if spectrum_accumulator is None:
+    if spectrum_sum is None:
+        if squared_sum is not None or chunks != 0:
+            raise RuntimeError("Spectrum accumulator state is inconsistent.")
         return None
 
-    if error_accumulator_x_squared is None or chunks_processed == 0:
-        raise RuntimeError("A spectrum result state is inconsistent.")
+    if squared_sum is None or chunks <= 0:
+        raise RuntimeError("A spectrum accumulator state is inconsistent.")
 
-    return spectrum_accumulator, error_accumulator_x_squared, chunks_processed
+    return spectrum_sum, squared_sum, chunks
 
 
-def _finalize_result_group(
-    spectrum_accumulator: Tensor,
-    error_accumulator_x_squared: Tensor,
+def _finalize_accumulator_group(
+    spectrum_sum: Tensor,
+    squared_sum: Tensor,
     chunks_processed: int,
 ) -> tuple[Tensor, Tensor | None]:
     """
     Compute spectrum mean and error for each specified group, e.g. for shifted and unshifted data.
     """
-    mean = spectrum_accumulator / chunks_processed
+    mean = spectrum_sum / chunks_processed
 
     if chunks_processed < 2:
         return mean, None
 
-    mean_squared = error_accumulator_x_squared / chunks_processed
+    mean_squared = squared_sum / chunks_processed
     variance = (chunks_processed / (chunks_processed - 1)) * (
         mean_squared
         - torch.complex(
@@ -107,26 +109,26 @@ def _finalize_result_group(
     return mean, error
 
 
-def finalize_result(result: SpectrumResult) -> None:
-    """Finalize accumulated spectra and error estimates on a result object."""
+def finalize_result(accumulator: SpectrumAccumulator) -> SpectrumResult:
+    """Create a finalized result from an accumulator."""
 
-    unshifted_group = _check_result_group(
-        result.spectrum_accumulator_unshifted,
-        result.error_accumulator_x_squared_unshifted,
-        result.chunks_processed_unshifted,
+    unshifted_group = _check_accumulator_group(
+        accumulator.spectrum_sum_unshifted,
+        accumulator.squared_sum_unshifted,
+        accumulator.chunks_unshifted,
     )
 
     if unshifted_group is None:
-        result.spectrum = None
-        result.spectrum_error = None
-        return
+        raise RuntimeError(
+            f"Cannot finalize channels {accumulator.channels}: no spectra were accumulated."
+        )
 
     groups = [unshifted_group]
 
-    shifted_group = _check_result_group(
-        result.spectrum_accumulator_shifted,
-        result.error_accumulator_x_squared_shifted,
-        result.chunks_processed_shifted,
+    shifted_group = _check_accumulator_group(
+        accumulator.spectrum_sum_shifted,
+        accumulator.squared_sum_shifted,
+        accumulator.chunks_shifted,
     )
     if shifted_group is not None:
         groups.append(shifted_group)
@@ -140,21 +142,23 @@ def finalize_result(result: SpectrumResult) -> None:
         total_spectrum += spectrum_sum
         total_chunks += chunks_processed
 
-        _, error = _finalize_result_group(
-            spectrum_accumulator=spectrum_sum,
-            error_accumulator_x_squared=squared_sum,
-            chunks_processed=chunks_processed,
+        _, error = _finalize_accumulator_group(
+            spectrum_sum=spectrum_sum, squared_sum=squared_sum, chunks_processed=chunks_processed
         )
         if error is not None:
             errors.append(error)
 
-    result.spectrum = (total_spectrum / total_chunks).cpu().resolve_conj().numpy()
+    spectrum = (total_spectrum / total_chunks).cpu().resolve_conj().numpy()
 
     if not errors:
-        result.spectrum_error = None
-        print("Need at least two spectral estimates for an error estimation.")
+        spectrum_error = None
+        warnings.warn(
+            "Need at least two spectral estimates for an error estimation.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
     elif len(errors) == 1:
-        result.spectrum_error = errors[0].cpu().resolve_conj().numpy()
+        spectrum_error = errors[0].cpu().resolve_conj().numpy()
     else:
         error_re = errors[0].real
         error_im = errors[0].imag
@@ -163,4 +167,12 @@ def finalize_result(result: SpectrumResult) -> None:
             error_re = torch.maximum(error_re, error.real)
             error_im = torch.maximum(error_im, error.imag)
 
-        result.spectrum_error = torch.complex(error_re, error_im).cpu().resolve_conj().numpy()
+        spectrum_error = torch.complex(error_re, error_im).cpu().resolve_conj().numpy()
+
+    return SpectrumResult(
+        channels=accumulator.channels,
+        freq=accumulator.freq,
+        freq_unit=accumulator.freq_unit,
+        spectrum=spectrum,
+        spectrum_error=spectrum_error,
+    )

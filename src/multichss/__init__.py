@@ -10,6 +10,7 @@ from __future__ import annotations
 from .configurators import DataConfig, PlotStyle, SpectrumConfig
 from .pipelines import calculate_spectra
 from .plotting import SpectrumFigure, build_order_1_table, create_spectrum_figures, save_figures
+from .results import SpectrumResult, SpectrumResultStore
 
 __all__ = [
     "DataConfig",
@@ -20,4 +21,6 @@ __all__ = [
     "create_spectrum_figures",
     "save_figures",
     "SpectrumFigure",
+    "SpectrumResult",
+    "SpectrumResultStore",
 ]

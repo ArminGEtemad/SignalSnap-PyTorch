@@ -3,6 +3,7 @@
 # However i know the results so they are good for testing.
 
 import numpy as np
+import pytest
 from multichss.pipelines import calculate_spectra
 from multichss.configurators import SpectrumConfig, DataConfig
 
@@ -32,13 +33,9 @@ def test_c1_returns_correct_mean():
     result_store = calculate_spectra(sconfig, [config1])
     result = result_store.get((0,))
 
-    assert result.spectrum is not None
-
     # Grab the component from the first-order spectrum
     real_part = result.spectrum[0].real
     imag_part = result.spectrum[0].imag
-
-    print(result.spectrum)
 
     # Assert
     assert abs(real_part - 2.0) < 1e-6, f"Expected real=2.0, got {real_part}"
@@ -57,10 +54,12 @@ def test_c1_returns_mean_when_selected_band_excludes_dc():
         frequency_points=100,
     )
 
-    result_store = calculate_spectra(sconfig, [config1])
+    with (
+        pytest.warns(UserWarning, match="using m=1 instead"),
+        pytest.warns(RuntimeWarning, match="at least two spectral estimates"),
+    ):
+        result_store = calculate_spectra(sconfig, [config1])
     result = result_store.get((0,))
 
-    assert result.spectrum is not None
-    assert result.freq is not None
     np.testing.assert_allclose(result.spectrum, np.asarray([2.0 + 0.0j]), atol=1e-12)
     np.testing.assert_allclose(result.freq, np.asarray([0.0]), atol=0.0)

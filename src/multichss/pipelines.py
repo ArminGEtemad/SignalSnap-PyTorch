@@ -10,7 +10,8 @@ from __future__ import annotations
 from .aggregator import accumulate_spectrum, finalize_result
 from .configurators import DataConfig, SpectrumConfig
 from .fft import compute_fft, iter_window_slices, prepare_window, reshape_window_chunk, to_device
-from .planning import build_runtime_config, initialize_result_store
+from .planning import build_runtime_config, initialize_accumulator_store
+from .results import SpectrumResultStore
 from .spectra import (
     build_intermediate_slice_buffer,
     build_third_order_cache,
@@ -18,7 +19,9 @@ from .spectra import (
 )
 
 
-def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]):
+def calculate_spectra(
+    spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]
+) -> SpectrumResultStore:
     """Calculate requested auto- and cross-polyspectra for one or more data channels.
 
     Builds the runtime configuration, expands the requested spectrum tasks, iterates over windowed
@@ -40,7 +43,7 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
     runtime = build_runtime_config(
         spectrum_config=spectrum_config, data_config_list=data_config_list
     )
-    result_store = initialize_result_store(runtime)
+    accumulator_store = initialize_accumulator_store(runtime)
     window_buffer = prepare_window(runtime)
 
     third_order_cache = build_third_order_cache(runtime) if 3 in runtime.orders else None
@@ -65,10 +68,11 @@ def calculate_spectra(spectrum_config: SpectrumConfig, data_config_list: list[Da
                 window_buffer=window_buffer,
                 runtime=runtime,
             )
-            result = result_store.get(channels)
-            accumulate_spectrum(result, spectrum, shifted=shifted)
+            accumulator = accumulator_store.get(channels)
+            accumulate_spectrum(accumulator, spectrum, shifted=shifted)
 
-    for result in result_store.results.values():
-        finalize_result(result)
+    result_store = SpectrumResultStore()
+    for accumulator in accumulator_store:
+        result_store.add(finalize_result(accumulator))
 
     return result_store

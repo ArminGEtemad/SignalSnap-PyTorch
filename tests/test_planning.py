@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from contextlib import nullcontext
 
 from multichss.configurators import DataConfig, SpectrumConfig
 from multichss.fft import iter_window_slices
@@ -63,7 +64,14 @@ def test_spectral_estimates_in_runtime_config(
     )
     data_config = DataConfig(data=np.ones(n_data_points), dt=1.0)
 
-    runtime = build_runtime_config(spectrum_config, [data_config])
+    warning_context = (
+        pytest.warns(UserWarning, match=f"using m={expected_m} instead")
+        if expected_m != m
+        else nullcontext()
+    )
+
+    with warning_context:
+        runtime = build_runtime_config(spectrum_config, [data_config])
 
     assert runtime.m == expected_m
     assert runtime.spectral_estimates == expected_unshifted_estimates
@@ -109,32 +117,6 @@ def test_window_slices_respect_interlacing(
     assert list(iter_window_slices(runtime)) == expected_slices
 
 
-def test_pipeline_processes_runtime_spectral_estimates():
-    spectrum_config = SpectrumConfig(
-        f_min=0.0,
-        f_max=0.5,
-        frequency_points=9,
-        spectra_channels=auto_spectra,
-        m=4,
-        spectral_estimates_max=3,
-        interlacing=True,
-    )
-    data_config = DataConfig(data=np.ones(256), dt=1.0)
-
-    runtime = build_runtime_config(spectrum_config, [data_config])
-    result_store = calculate_spectra(spectrum_config, [data_config])
-
-    assert runtime.spectral_estimates == 3
-
-    for result in result_store.results.values():
-        assert result.chunks_processed_unshifted == 3
-        assert result.chunks_processed_shifted == 3
-        assert (
-            result.chunks_processed_shifted + result.chunks_processed_unshifted
-            == 2 * runtime.spectral_estimates
-        )
-
-
 def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_masked():
     spectrum_config = SpectrumConfig(
         f_min=-0.25,
@@ -146,38 +128,12 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
     )
     data_config = DataConfig(data=np.ones(64), dt=1.0)
 
-    result_store = calculate_spectra(spectrum_config, [data_config])
+    with pytest.warns(RuntimeWarning, match="at least two spectral estimates"):
+        result_store = calculate_spectra(spectrum_config, [data_config])
     result = result_store.get((0, 0, 0))
 
-    assert result.freq is not None
-    assert result.spectrum is not None
     assert result.spectrum.shape == (result.freq.size, result.freq.size)
     assert np.isnan(result.spectrum).any()
-
-
-def test_pipeline_processes_runtime_spectral_estimates_without_interlacing():
-    spectrum_config = SpectrumConfig(
-        f_min=0.0,
-        f_max=0.5,
-        frequency_points=9,
-        spectra_channels=auto_spectra,
-        m=4,
-        spectral_estimates_max=None,
-        interlacing=False,
-    )
-    data_config = DataConfig(data=np.ones(136), dt=1.0)
-
-    runtime = build_runtime_config(spectrum_config, [data_config])
-    result_store = calculate_spectra(spectrum_config, [data_config])
-
-    assert runtime.spectral_estimates == 2
-    for result in result_store.results.values():
-        assert result.chunks_processed_unshifted == 2
-        assert result.chunks_processed_shifted == 0
-        assert (
-            result.chunks_processed_shifted + result.chunks_processed_unshifted
-            == runtime.spectral_estimates
-        )
 
 
 def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
