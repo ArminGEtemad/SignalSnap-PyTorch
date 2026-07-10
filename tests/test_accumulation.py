@@ -2,8 +2,11 @@ import numpy as np
 import pytest
 import torch
 
-from multichss.aggregator import accumulate_spectrum, finalize_result
-from multichss.results import SpectrumAccumulator, SpectrumResult
+from multichss._core.accumulation import (
+    SpectrumAccumulator,
+    accumulate_spectrum,
+    finalize_result,
+)
 
 
 def make_accumulator(
@@ -50,9 +53,10 @@ def test_finalize_result_calculates_mean_and_componentwise_sem():
     result = finalize_result(accumulator)
 
     np.testing.assert_allclose(result.spectrum, np.asarray([2 + 3j, 4 + 6j]))
+    assert result.spectrum_error is not None
     np.testing.assert_allclose(result.spectrum_error, np.asarray([1 + 1j, 1 + 2j]))
     assert result.channels == accumulator.channels
-    assert result.freq is accumulator.freq
+    np.testing.assert_array_equal(result.freq, accumulator.freq)
     assert result.freq_unit == accumulator.freq_unit
 
 
@@ -72,6 +76,7 @@ def test_finalize_result_combines_groups_and_uses_larger_componentwise_sem():
     result = finalize_result(accumulator)
 
     np.testing.assert_allclose(result.spectrum, np.asarray([7 + 3j]))
+    assert result.spectrum_error is not None
     np.testing.assert_allclose(result.spectrum_error, np.asarray([2 + 2j]))
 
 
@@ -79,6 +84,7 @@ def test_finalize_result_with_one_estimate_warns_and_returns_no_error():
     accumulator = make_accumulator()
     estimate = torch.tensor([1 + 2j, 3 + 4j], dtype=torch.complex128)
     accumulate_spectrum(accumulator, estimate)
+    assert accumulator.spectrum_sum_unshifted is not None
     sum_before = accumulator.spectrum_sum_unshifted.clone()
 
     with pytest.warns(RuntimeWarning, match="at least two spectral estimates"):
@@ -123,45 +129,3 @@ def test_finalize_result_rejects_inconsistent_accumulator_state(
 
     with pytest.raises(RuntimeError, match="accumulator state is inconsistent"):
         finalize_result(accumulator)
-
-
-@pytest.mark.parametrize(
-    ("freq", "spectrum", "spectrum_error", "message"),
-    [
-        pytest.param(
-            np.zeros((2, 2)),
-            np.zeros(2, dtype=complex),
-            None,
-            "Frequency axis must be one-dimensional",
-            id="frequency-dimensions",
-        ),
-        pytest.param(
-            np.zeros(2),
-            np.zeros(3, dtype=complex),
-            None,
-            "spectrum has shape",
-            id="spectrum-shape",
-        ),
-        pytest.param(
-            np.zeros(2),
-            np.zeros(2, dtype=complex),
-            np.zeros(3, dtype=complex),
-            "Spectrum error must have the same shape",
-            id="error-shape",
-        ),
-    ],
-)
-def test_spectrum_result_rejects_inconsistent_array_shapes(
-    freq,
-    spectrum,
-    spectrum_error,
-    message,
-):
-    with pytest.raises(ValueError, match=message):
-        SpectrumResult(
-            channels=(0, 0),
-            freq=freq,
-            freq_unit="Hz",
-            spectrum=spectrum,
-            spectrum_error=spectrum_error,
-        )

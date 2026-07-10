@@ -7,14 +7,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import torch
 
-from .configurators import DataConfig, SpectrumConfig
-from .results import SpectrumAccumulator, SpectrumAccumulatorStore
+from ..configurators import DataConfig, SpectrumConfig
+from .accumulation import SpectrumAccumulator, SpectrumAccumulatorStore
 from .utils import ChannelIndex, FrequencyUnits, TimeUnits, unit_conversion_time_to_freq
 
 
@@ -178,7 +178,7 @@ def build_runtime_config(
     if window_points <= 0:
         raise ValueError("Calculated window_points must be greater than zero.")
 
-    # Resolve spectra_channels, default to all auto-correlation spectra of order 1-4 if 
+    # Resolve spectra_channels, default to all auto-correlation spectra of order 1-4 if
     # spectra_channels is not specified
     if spectrum_config.spectra_channels is None:
         spectra_channels = []
@@ -186,7 +186,7 @@ def build_runtime_config(
             for order in range(1, 5):
                 spectra_channels.append((channel,) * order)
     else:
-        spectra_channels = spectrum_config.spectra_channels 
+        spectra_channels = spectrum_config.spectra_channels
 
     # Check if enough data is available and try to lower the window count per cumulant/spectrum
     # estimate if needed

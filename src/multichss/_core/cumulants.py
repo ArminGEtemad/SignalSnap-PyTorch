@@ -39,8 +39,8 @@ def _mean_outer(m: int, a: Tensor, b: Tensor) -> Tensor:
     """
     Computes the average outer product over the window axis (frist axis).
 
-    ``a`` and ``b`` are Tensors of shape ``(m, F)``. 
-    Returns a ``(F, F)`` Tensor: result[f, g] = (1/m)* sum_i a[i, f] * b[i, g], so for every window 
+    ``a`` and ``b`` are Tensors of shape ``(m, F)``.
+    Returns a ``(F, F)`` Tensor: result[f, g] = (1/m)* sum_i a[i, f] * b[i, g], so for every window
     with index ``i`` the ``(F, F)`` grid is computed and at the end the windows are averaged.
     """
     return torch.einsum("mf,mg->fg", a, b) / m
@@ -89,20 +89,20 @@ def c4_factorized(
 ) -> Tensor:
     """Fourth-order cumulant.
 
-        C4(x, y) = (m^2)/((m-1)(m-2)(m-3)) 
+        C4(x, y) = (m^2)/((m-1)(m-2)(m-3))
                     * ((m+1) * ((x-x.mean)*(y-y.mean)*(z-z.mean)*(w-w.mean)).mean
                         -(m-1) *(
                                 (((x-x.mean)*(y-y.mean)).mean * ((z-z.mean)*(w-w.mean)).mean)
                                 +(((x-x.mean)*(z-z.mean)).mean * ((y-y.mean)*(w-w.mean)).mean)
                                 +(((x-x.mean)*(w-w.mean)).mean * ((y-y.mean)*(z-z.mean)).mean)
                         )
-                    
+
                     )
 
     ``centered_x``, ``centered_y``, ``centered_z``, and ``centered_w`` are the Fourier coefficients
     of the specified user band with the mean (calculated over the m windows) subtracted and have
     shape ``(m, F)``, with ``F=runtime.band_max_idx - runtime.band_min_idx``.
-    
+
     Returns a ``(F, F)`` shaped spectrum. ``centered_x`` and ``centered_y`` are varied in the first
     component of the result and ``centered_z`` and ``centered_z`` are varied in the second component
     of the result.

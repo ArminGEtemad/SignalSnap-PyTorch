@@ -116,7 +116,7 @@ def _gaussian(x: Tensor, N: int, sigma_t_prefactor: float) -> Tensor:
     return torch.exp(-t * t)
 
 
-def acG_window_func(
+def _acg_window(
     N: int,
     sigma_t: float = 0.14,
     torch_device: torch.device = torch.device("cpu"),
@@ -197,7 +197,7 @@ def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
             dtype=runtime.real_dtype,
         )
     else:
-        window = acG_window_func(
+        window = _acg_window(
             runtime.window_points,
             torch_device=runtime.device,
             dtype=runtime.real_dtype,

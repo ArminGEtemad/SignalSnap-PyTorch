@@ -1,19 +1,30 @@
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
-from multichss.configurators import SpectrumConfig
+from multichss import SpectrumConfig
 
 
-def test_spectrum_config_allows_negative_f_min_for_order_3_auto_spectrum():
-    SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 0, 0)])
-
-
-def test_spectrum_config_allows_negative_f_min_for_order_3_cross_spectrum():
-    SpectrumConfig(f_min=-1, f_max=1, spectra_channels=[(0, 1, 1)])
-
-
-def test_spectrum_config_allows_repeated_channels_in_spectra():
-    SpectrumConfig(spectra_channels=[(1, 1, 0)])
+@pytest.mark.parametrize(
+    "config_kwargs",
+    [
+        pytest.param(
+            {"f_min": -1, "f_max": 1, "spectra_channels": [(0, 0, 0)]},
+            id="negative-band-order-3-auto",
+        ),
+        pytest.param(
+            {"f_min": -1, "f_max": 1, "spectra_channels": [(0, 1, 1)]},
+            id="negative-band-order-3-cross",
+        ),
+        pytest.param(
+            {"spectra_channels": [(1, 1, 0)]},
+            id="repeated-channels",
+        ),
+    ],
+)
+def test_spectrum_config_accepts_valid_spectrum_requests(config_kwargs: dict[str, Any]):
+    SpectrumConfig(**config_kwargs)
 
 
 def test_spectrum_config_rejects_duplicate_spectra():
@@ -29,3 +40,7 @@ def test_spectrum_config_rejects_empty_spectrum_request():
 def test_spectrum_config_rejects_negative_spectra_channel_indices():
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
         SpectrumConfig(spectra_channels=[(-1,)])
+
+
+def test_spectrum_config_defaults_to_no_interlacing():
+    assert SpectrumConfig().interlacing is False

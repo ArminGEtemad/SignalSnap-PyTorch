@@ -13,17 +13,17 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .utils import ChannelIndex, PlotComponent, TimeUnits
+from ._core.utils import ChannelIndex, PlotComponent, TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
-SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+_SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
 class DataConfig(BaseModel):
     """Configuration for data used in polyspectra calculations.
 
-    These settings are later resolved together with :class:`SpectrumConfig` into a
-    :class:`~multichss.planning.RuntimeConfig`.
+    These settings are later resolved together with :class:`SpectrumConfig` into the internal
+    runtime configuration used by :func:`multichss.calculate_spectra`.
 
     Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
     used to determine the number of data points (``window_points``) used for each Fourier
@@ -45,7 +45,7 @@ class DataConfig(BaseModel):
         Unit of the time step. Defaults to ``"s"``.
     """
 
-    model_config = SHARED_CONFIG
+    model_config = _SHARED_CONFIG
 
     data: Any
     dt: Annotated[float, Field(gt=0)]
@@ -86,7 +86,7 @@ class PlotStyle(BaseModel):
         Opacity of the overlay marking insignificant values.
     """
 
-    model_config = SHARED_CONFIG
+    model_config = _SHARED_CONFIG
 
     f_min: float
     f_max: float
@@ -117,7 +117,8 @@ class SpectrumConfig(BaseModel):
     :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency bounds,
     number of frequency points, spectrum orders, window count per spectral estimate, backend torch
     device, and compatibility options. These settings are later resolved together with
-    :class:`DataConfig` into a :class:`~multichss.planning.RuntimeConfig`.
+    :class:`DataConfig` into the internal runtime configuration used by
+    :func:`multichss.calculate_spectra`.
 
     ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the frequency spacing::
 
@@ -167,7 +168,7 @@ class SpectrumConfig(BaseModel):
         the old API is used as a window function.
     """
 
-    model_config = SHARED_CONFIG
+    model_config = _SHARED_CONFIG
 
     f_min: float = 0.0
     f_max: float | None = None

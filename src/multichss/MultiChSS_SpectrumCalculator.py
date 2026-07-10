@@ -1,7 +1,6 @@
 """Deprecated legacy implementation kept for reference.
 
-New code should use ``multichss.calculate_spectra`` and the modular pipeline in ``planning``,
-``fft``, ``spectra``, ``aggregator``, and ``results`` instead.
+New code should use ``multichss.calculate_spectra`` instead.
 """
 
 # This file is part of SignalSnap (PyTorch): Signal Analysis In Python Made Easy

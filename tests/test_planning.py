@@ -1,11 +1,11 @@
-import numpy as np
-import pytest
 from contextlib import nullcontext
 
-from multichss.configurators import DataConfig, SpectrumConfig
-from multichss.fft import iter_window_slices
-from multichss.pipelines import calculate_spectra
-from multichss.planning import build_runtime_config
+import numpy as np
+import pytest
+
+from multichss import DataConfig, SpectrumConfig, calculate_spectra
+from multichss._core.fft import iter_window_slices
+from multichss._core.planning import build_runtime_config
 
 auto_spectra = [(0,), (0, 0)]
 
@@ -23,10 +23,9 @@ auto_spectra = [(0,), (0, 0)]
     ),
     [
         pytest.param(80, None, auto_spectra, 9, 0.5, 4, 1, 4, id="uncapped"),
-        pytest.param(80, 1, auto_spectra, 9, 0.5, 4, 1, 4, id="capped-below-available"),
-        pytest.param(128, 2, auto_spectra, 9, 0.5, 4, 2, 4, id="cap-below-boundary"),
+        pytest.param(136, 1, auto_spectra, 9, 0.5, 4, 1, 4, id="cap-below-available"),
+        pytest.param(128, 2, auto_spectra, 9, 0.5, 4, 2, 4, id="cap-equals-available"),
         pytest.param(136, 10, auto_spectra, 9, 0.5, 4, 2, 4, id="cap-above-available"),
-        pytest.param(136, 4, auto_spectra, 9, 0.5, 4, 2, 4, id="cap-equals-available"),
         pytest.param(127, None, auto_spectra, 9, 0.5, 4, 1, 4, id="one-before-next-base"),
         pytest.param(63, None, auto_spectra, 9, 0.5, 4, 1, 3, id="m-reduced-at-short-boundary"),
         pytest.param(
@@ -40,8 +39,6 @@ auto_spectra = [(0,), (0, 0)]
             4,
             id="higher-orders-capped",
         ),
-        pytest.param(96, None, auto_spectra, 6, 1 / 3, 3, 2, 3, id="odd-window-before-half-shift"),
-        pytest.param(97, None, auto_spectra, 6, 1 / 3, 3, 2, 3, id="odd-window-at-half-shift"),
     ],
 )
 def test_spectral_estimates_in_runtime_config(
@@ -78,37 +75,77 @@ def test_spectral_estimates_in_runtime_config(
 
 
 @pytest.mark.parametrize(
-    ("interlacing", "expected_slices", "expected_spectral_estimates"),
+    (
+        "n_data_points",
+        "frequency_points",
+        "f_max",
+        "m",
+        "interlacing",
+        "expected_slices",
+        "expected_spectral_estimates",
+    ),
     [
         pytest.param(
+            136,
+            9,
+            0.5,
+            4,
             True,
             [(0, 64, False), (64, 128, False), (8, 72, True), (72, 136, True)],
             2,
-            id="interlacing-enabled",
+            id="even-window-interlacing-enabled",
         ),
         pytest.param(
+            136,
+            9,
+            0.5,
+            4,
             False,
             [(0, 64, False), (64, 128, False)],
             2,
-            id="interlacing-disabled",
+            id="even-window-interlacing-disabled",
+        ),
+        pytest.param(
+            96,
+            6,
+            1 / 3,
+            3,
+            True,
+            [(0, 45, False), (45, 90, False), (7, 52, True)],
+            2,
+            id="odd-window-before-second-shifted-estimate",
+        ),
+        pytest.param(
+            97,
+            6,
+            1 / 3,
+            3,
+            True,
+            [(0, 45, False), (45, 90, False), (7, 52, True), (52, 97, True)],
+            2,
+            id="odd-window-at-second-shifted-estimate",
         ),
     ],
 )
 def test_window_slices_respect_interlacing(
+    n_data_points,
+    frequency_points,
+    f_max,
+    m,
     interlacing,
     expected_slices,
     expected_spectral_estimates,
 ):
     spectrum_config = SpectrumConfig(
         f_min=0.0,
-        f_max=0.5,
-        frequency_points=9,
+        f_max=f_max,
+        frequency_points=frequency_points,
         spectra_channels=auto_spectra,
-        m=4,
+        m=m,
         spectral_estimates_max=None,
         interlacing=interlacing,
     )
-    data_config = DataConfig(data=np.ones(136), dt=1.0)
+    data_config = DataConfig(data=np.ones(n_data_points), dt=1.0)
 
     runtime = build_runtime_config(spectrum_config, [data_config])
 
@@ -133,7 +170,23 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
     result = result_store.get((0, 0, 0))
 
     assert result.spectrum.shape == (result.freq.size, result.freq.size)
-    assert np.isnan(result.spectrum).any()
+
+    assert spectrum_config.f_max is not None
+    window_duration = (spectrum_config.frequency_points - 1) / (
+        spectrum_config.f_max - spectrum_config.f_min
+    )
+    window_points = int(np.round(window_duration / data_config.dt))
+    full_fft_freq = np.fft.fftshift(np.fft.fftfreq(window_points, data_config.dt))
+    third_factor_freq = -(result.freq[:, None] + result.freq[None, :])
+    expected_valid_mask = np.isclose(
+        third_factor_freq[..., None],
+        full_fft_freq,
+        rtol=0.0,
+        atol=1e-12,
+    ).any(axis=-1)
+
+    np.testing.assert_array_equal(np.isnan(result.spectrum), ~expected_valid_mask)
+    assert np.isfinite(result.spectrum[expected_valid_mask]).all()
 
 
 def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
@@ -231,7 +284,3 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
 
     with pytest.raises(ValueError, match="Channel indices must be in the range"):
         build_runtime_config(spectrum_config, [data_config])
-
-
-def test_spectrum_config_defaults_to_no_interlacing():
-    assert SpectrumConfig().interlacing is False

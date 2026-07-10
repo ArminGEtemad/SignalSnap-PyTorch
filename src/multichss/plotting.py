@@ -17,9 +17,9 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 
+from ._core.utils import PlotComponent
 from .configurators import PlotStyle
 from .results import SpectrumResult, SpectrumResultStore
-from .utils import PlotComponent
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,6 @@ def build_order_1_table(result_store: SpectrumResultStore) -> str:
 
     rows = []
     for result in order_1_results:
-
         value = result.spectrum[0]
         error = result.spectrum_error[0] if result.spectrum_error is not None else None
 

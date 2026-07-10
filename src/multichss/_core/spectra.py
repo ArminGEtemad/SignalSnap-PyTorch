@@ -53,7 +53,7 @@ class IntermediateSliceBuffer:
         if channel not in self._centered_coeffs_by_channel_band:
             coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx]
             self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
-        
+
         if conjugated:
             return torch.conj(self._centered_coeffs_by_channel_band[channel])
         else:
