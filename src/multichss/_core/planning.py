@@ -8,13 +8,13 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
 from ..configurators import DataConfig, SpectrumConfig
-from .accumulation import SpectrumAccumulator, SpectrumAccumulatorStore
 from .utils import ChannelIndex, FrequencyUnits, TimeUnits, unit_conversion_time_to_freq
 
 
@@ -269,25 +269,28 @@ def build_runtime_config(
     )
 
 
-def initialize_accumulator_store(runtime: RuntimeConfig) -> SpectrumAccumulatorStore:
-    """Create an initialized :class:`SpectrumAccumulatorStore` for a list of spectrum tasks.
+def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
+    """Return the window slice indices.
 
-    Each task is converted into a :class:`SpectrumAccumulator` with matching channels.
-
-    Parameters
-    ----------
-    runtime : :class:`RuntimeConfig`
-        :class:`RuntimeConfig` that contains all necessary information to initialize a
-        :class:`SpectrumAccumulator`.
-
-    Returns
-    -------
-    SpectrumAccumulatorStore
-        Store containing one initialized :class:`SpectrumAccumulator` per task.
+    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data
+    channel, where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled,
+    additional slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
     """
 
-    store = SpectrumAccumulatorStore()
-    for channels in runtime.spectra_channels:
-        freq = np.asarray([0.0]) if len(channels) == 1 else runtime.freq_band
-        store.add(SpectrumAccumulator(channels, freq=freq, freq_unit=runtime.freq_unit))
-    return store
+    chunk_size = runtime.window_points * runtime.m
+
+    for chunk_index in range(runtime.spectral_estimates):
+        start = chunk_index * chunk_size
+        end = start + chunk_size
+        yield start, end, False
+
+    if runtime.interlacing:
+        shift = runtime.window_points // 2
+        n_chunks_shifted = max(
+            0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size
+        )
+        shifted_estimates = min(runtime.spectral_estimates, n_chunks_shifted)
+        for chunk_index in range(shifted_estimates):
+            start = chunk_index * chunk_size + shift
+            end = start + chunk_size
+            yield start, end, True

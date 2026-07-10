@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 
 from multichss import DataConfig, SpectrumConfig, calculate_spectra
-from multichss._core.fft import iter_window_slices
-from multichss._core.planning import build_runtime_config
+from multichss._core.planning import build_runtime_config, iter_window_slices
 
 auto_spectra = [(0,), (0, 0)]
 

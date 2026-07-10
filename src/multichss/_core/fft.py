@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -212,33 +211,6 @@ def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
             runtime.dt * (window**4).sum(),
         ),
     )
-
-
-def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
-    """Return the window slice indices.
-
-    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data
-    channel, where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled,
-    additional slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
-    """
-
-    chunk_size = runtime.window_points * runtime.m
-
-    for chunk_index in range(runtime.spectral_estimates):
-        start = chunk_index * chunk_size
-        end = start + chunk_size
-        yield start, end, False
-
-    if runtime.interlacing:
-        shift = runtime.window_points // 2
-        n_chunks_shifted = max(
-            0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size
-        )
-        shifted_estimates = min(runtime.spectral_estimates, n_chunks_shifted)
-        for chunk_index in range(shifted_estimates):
-            start = chunk_index * chunk_size + shift
-            end = start + chunk_size
-            yield start, end, True
 
 
 def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarray:

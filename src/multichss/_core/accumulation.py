@@ -7,16 +7,20 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-import warnings
+from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 from torch import Tensor
-import numpy as np
 
 from ..results import SpectrumResult
 from .utils import FrequencyUnits
+
+if TYPE_CHECKING:
+    from .planning import RuntimeConfig
 
 
 @dataclass(slots=True)
@@ -104,6 +108,30 @@ class SpectrumAccumulatorStore:
     def add(self, accumulator: SpectrumAccumulator) -> None:
         """Add or replace a spectrum accumulator using its channels."""
         self.accumulators[accumulator.channels] = accumulator
+
+
+def initialize_accumulator_store(runtime: RuntimeConfig) -> SpectrumAccumulatorStore:
+    """Create an initialized :class:`SpectrumAccumulatorStore` for a list of spectrum tasks.
+
+    Each task is converted into a :class:`SpectrumAccumulator` with matching channels.
+
+    Parameters
+    ----------
+    runtime : :class:`RuntimeConfig`
+        :class:`RuntimeConfig` that contains all necessary information to initialize a
+        :class:`SpectrumAccumulator`.
+
+    Returns
+    -------
+    SpectrumAccumulatorStore
+        Store containing one initialized :class:`SpectrumAccumulator` per task.
+    """
+
+    store = SpectrumAccumulatorStore()
+    for channels in runtime.spectra_channels:
+        freq = np.asarray([0.0]) if len(channels) == 1 else runtime.freq_band
+        store.add(SpectrumAccumulator(channels, freq=freq, freq_unit=runtime.freq_unit))
+    return store
 
 
 def accumulate_spectrum(

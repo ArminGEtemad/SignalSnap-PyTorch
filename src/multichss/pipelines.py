@@ -41,12 +41,11 @@ def calculate_spectra(
     runtime = _planning.build_runtime_config(
         spectrum_config=spectrum_config, data_config_list=data_config_list
     )
-    accumulator_store = _planning.initialize_accumulator_store(runtime)
     window_buffer = _fft.prepare_window(runtime)
-
     third_order_cache = _spectra.build_third_order_cache(runtime) if 3 in runtime.orders else None
+    accumulator_store = _accumulation.initialize_accumulator_store(runtime)
 
-    for start, end, shifted in _fft.iter_window_slices(runtime):
+    for start, end, shifted in _planning.iter_window_slices(runtime):
         coeffs_by_channel = {}
 
         for channel in runtime.active_channels:
