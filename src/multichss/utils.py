@@ -13,7 +13,8 @@ from pydantic import Field
 
 TimeUnits: TypeAlias = Literal["s", "ms", "us", "ns", "ps"]
 FrequencyUnits: TypeAlias = Literal["Hz", "kHz", "MHz", "GHz", "THz"]
-ChannelIndex = Annotated[int, Field(ge=0)]
+ChannelIndex: TypeAlias = Annotated[int, Field(ge=0)]
+PlotComponent: TypeAlias = Literal["re", "im"]
 
 
 def unit_conversion_time_to_freq(t_unit: TimeUnits) -> FrequencyUnits:

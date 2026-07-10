@@ -19,6 +19,7 @@ from matplotlib.figure import Figure
 
 from .configurators import PlotStyle
 from .results import SpectrumResult, SpectrumResultStore
+from .utils import PlotComponent
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,25 @@ class SpectrumFigure:
         return f"s{self.order}_channels_{channel_label}.{extension}"
 
 
-def component_data(data: np.ndarray, component: str) -> np.ndarray:
+def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
+    finite = np.asarray(data)[np.isfinite(data)]
+
+    if finite.size == 0:
+        return None
+
+    maximum = float(np.max(np.abs(finite)))
+
+    if maximum == 0.0:
+        return None
+
+    return ratio * maximum
+
+
+def _arcsinh_transform(data: np.ndarray, width: float) -> np.ndarray:
+    return width * np.arcsinh(data / width)
+
+
+def _component_data(data: np.ndarray, component: PlotComponent) -> np.ndarray:
     if component == "re":
         return np.real(data)
     if component == "im":
@@ -40,11 +59,11 @@ def component_data(data: np.ndarray, component: str) -> np.ndarray:
     raise ValueError(f"Unsupported plot component: {component}")
 
 
-def component_label(component: str) -> str:
+def _component_label(component: PlotComponent) -> str:
     return "Real" if component == "re" else "Imaginary"
 
 
-def custom_colormap():
+def _custom_colormap() -> LinearSegmentedColormap:
     colors = (
         np.array(
             [
@@ -63,17 +82,17 @@ def custom_colormap():
     return mcolors.LinearSegmentedColormap.from_list("multichss_spectrum", colors)
 
 
-def custom_error_colormap(insignif_transparency: float):
+def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColormap:
     return LinearSegmentedColormap.from_list(
         "multichss_insignificant",
         [
             (0.0, 0.0, 0.0, 0.0),
-            (1.0, 1.0, 1.0, insignif_transparency),
+            (1.0, 1.0, 1.0, insignificance_alpha),
         ],
     )
 
 
-def format_order_1_rows(rows: list[dict[str, object]]) -> str:
+def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
     headers = ["Channels", "Real", "Imag", "Error real", "Error imag"]
 
     table = [[str(row.get(header, "")) for header in headers] for row in rows]
@@ -99,8 +118,6 @@ def build_order_1_table(result_store: SpectrumResultStore) -> str:
 
     rows = []
     for result in order_1_results:
-        if result.spectrum is None:
-            raise RuntimeError(f"Spectrum result for channel {result.channels} is not available.")
 
         value = result.spectrum[0]
         error = result.spectrum_error[0] if result.spectrum_error is not None else None
@@ -114,15 +131,10 @@ def build_order_1_table(result_store: SpectrumResultStore) -> str:
                 "Error imag": None if error is None else error.imag,
             }
         )
-    return format_order_1_rows(rows)
+    return _format_order_1_rows(rows)
 
 
-def create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
-    if result.spectrum is None:
-        raise RuntimeError(f"Spectrum result for channels {result.channels} is not available.")
-
-    if result.freq is None:
-        raise RuntimeError(f"Spectrum result for channels {result.channels} has no frequency axis.")
+def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
 
     fig, axes = plt.subplots(
         len(plot_style.plot_format),
@@ -134,18 +146,41 @@ def create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figu
 
     for row, component in enumerate(plot_style.plot_format):
         ax = axes[row][0]
-        y = component_data(result.spectrum, component)
+        raw_y = _component_data(result.spectrum, component)
+        width = None
 
-        ax.plot(result.freq, y, label=f"S{result.order} {component_label(component)}")
+        if plot_style.arcsinh_ratio is not None:
+            width = _arcsinh_width(raw_y, plot_style.arcsinh_ratio)
+
+        y = raw_y if width is None else _arcsinh_transform(raw_y, width)
+
+        component_name = _component_label(component)
+
+        if width is not None:
+            component_name += " (arcsinh scaled)"
+
+        ax.plot(result.freq, y, label=f"S{result.order} {component_name}")
 
         if result.spectrum_error is not None:
-            err = np.abs(component_data(result.spectrum_error, component))
-            for i in range(plot_style.significance):
-                width = (i + 1) * err
-                ax.fill_between(result.freq, y - width, y + width, alpha=0.15)
+            err = np.abs(_component_data(result.spectrum_error, component))
+            interval = plot_style.sigma * err
+
+            lower = raw_y - interval
+            upper = raw_y + interval
+
+            if width is not None:
+                lower = _arcsinh_transform(lower, width)
+                upper = _arcsinh_transform(upper, width)
+
+            ax.fill_between(
+                result.freq,
+                lower,
+                upper,
+                alpha=0.15,
+            )
 
         ax.set_xlim(plot_style.f_min, plot_style.f_max)
-        ax.set_ylabel(component_label(component))
+        ax.set_ylabel(component_name)
         ax.set_title(f"S2 of channels {result.channels}")
         ax.legend()
 
@@ -155,15 +190,9 @@ def create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figu
     return fig
 
 
-def create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
-    cmap = custom_colormap()
-    error_cmap = custom_error_colormap(plot_style.insignif_transparency)
-
-    if result.spectrum is None:
-        raise RuntimeError(f"Spectrum result for channels {result.channels} is not available.")
-
-    if result.freq is None:
-        raise RuntimeError(f"Spectrum result for channels {result.channels} has no frequency axis.")
+def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
+    cmap = _custom_colormap()
+    error_cmap = _custom_error_colormap(plot_style.insignificance_alpha)
 
     fig, axes = plt.subplots(
         1,
@@ -176,7 +205,13 @@ def create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) ->
 
     for col, component in enumerate(plot_style.plot_format):
         ax = axes[0][col]
-        z = component_data(result.spectrum, component)
+        raw_z = _component_data(result.spectrum, component)
+
+        width = None
+        if plot_style.arcsinh_ratio is not None:
+            width = _arcsinh_width(raw_z, plot_style.arcsinh_ratio)
+
+        z = raw_z if width is None else _arcsinh_transform(raw_z, width)
         z = np.ma.masked_invalid(z)
 
         limit = np.nanmax(np.abs(z))
@@ -191,8 +226,8 @@ def create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) ->
         )
 
         if result.spectrum_error is not None:
-            err = np.abs(component_data(result.spectrum_error, component))
-            insignificant = np.abs(z) < plot_style.significance * err
+            err = np.abs(_component_data(result.spectrum_error, component))
+            insignificant = np.abs(raw_z) < plot_style.sigma * err
             ax.pcolormesh(
                 x,
                 y,
@@ -203,11 +238,16 @@ def create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) ->
                 shading="auto",
             )
 
+        component_name = _component_label(component)
+
+        if width is not None:
+            component_name += " (arcsinh scaled)"
+
         ax.set_xlim(plot_style.f_min, plot_style.f_max)
         ax.set_ylim(plot_style.f_min, plot_style.f_max)
         ax.set_xlabel(f"Frequency / {result.freq_unit}")
         ax.set_ylabel(f"Frequency / {result.freq_unit}")
-        ax.set_title(f"S{result.order} {component_label(component)} channels {result.channels}")
+        ax.set_title(f"S{result.order} {component_name} channels {result.channels}")
         fig.colorbar(mesh, ax=ax)
 
     fig.tight_layout()
@@ -226,9 +266,9 @@ def create_spectrum_figures(
         if result.order == 1:
             continue
         elif result.order == 2:
-            figure = create_order_2_figure(result, plot_style)
+            figure = _create_order_2_figure(result, plot_style)
         elif result.order in (3, 4):
-            figure = create_order_3_or_4_figure(result, plot_style)
+            figure = _create_order_3_or_4_figure(result, plot_style)
         else:
             raise ValueError(f"Unsupported spectrum order: {result.order}")
 

@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .utils import ChannelIndex, TimeUnits
+from .utils import ChannelIndex, PlotComponent, TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -75,14 +75,15 @@ class PlotStyle(BaseModel):
     ----------
     f_min, f_max : float
         Frequency range displayed in plots.
-    significance : int
-        Number of error estimates used to mark insignificant regions.
-    arcsinh_scale : tuple[bool, float]
-        Whether to apply arcsinh scaling and the relative scale factor to use.
+    sigma : float
+        Number of standard errors used for uncertainty intervals and insignificance thresholds.
+    arcsinh_ratio : float | None
+        Relative width of the approximately linear region used for arcsinh display scaling. If
+        ``None``, no scaling is applied.
     plot_format : list[Literal["re", "im"]]
         Spectrum components to plot.
-    insignif_transparency : float
-        Overlay opacity for values below the configured significance threshold.
+    insignificance_alpha : float
+        Opacity of the overlay marking insignificant values.
     """
 
     model_config = SHARED_CONFIG
@@ -90,14 +91,14 @@ class PlotStyle(BaseModel):
     f_min: float
     f_max: float
 
-    significance: Annotated[int, Field(gt=0)] = 1
-    arcsinh_scale: tuple[bool, Annotated[float, Field(ge=0)]] = (False, 0.02)
-    plot_format: Annotated[list[Literal["re", "im"]], Field(min_length=1)] = ["re", "im"]
-    insignif_transparency: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
+    sigma: Annotated[float, Field(gt=0)] = 1.0
+    arcsinh_ratio: Annotated[float, Field(gt=0)] | None = None
+    plot_format: Annotated[list[PlotComponent], Field(min_length=1)] = ["re", "im"]
+    insignificance_alpha: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
 
     @field_validator("plot_format")
     @classmethod
-    def ensure_unique_formats(cls, v: list[str]) -> list[str]:
+    def ensure_unique_formats(cls, v: list[PlotComponent]) -> list[PlotComponent]:
         """Ensure plot_format does not contain duplicate components."""
         if len(v) != len(set(v)):
             raise ValueError("plot_format cannot contain duplicate elements.")
