@@ -17,7 +17,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 
-from ._core.utils import PlotComponent
+from ._core.utils import PlotComponent as _PlotComponent
 from .configurators import PlotStyle
 from .results import SpectrumResult, SpectrumResultStore
 
@@ -51,7 +51,7 @@ def _arcsinh_transform(data: np.ndarray, width: float) -> np.ndarray:
     return width * np.arcsinh(data / width)
 
 
-def _component_data(data: np.ndarray, component: PlotComponent) -> np.ndarray:
+def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
     if component == "re":
         return np.real(data)
     if component == "im":
@@ -59,7 +59,7 @@ def _component_data(data: np.ndarray, component: PlotComponent) -> np.ndarray:
     raise ValueError(f"Unsupported plot component: {component}")
 
 
-def _component_label(component: PlotComponent) -> str:
+def _component_label(component: _PlotComponent) -> str:
     return "Real" if component == "re" else "Imaginary"
 
 
