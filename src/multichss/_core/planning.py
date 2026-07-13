@@ -10,8 +10,10 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 import torch
 
 from ..configurators import DataConfig, SpectrumConfig
@@ -94,6 +96,35 @@ class RuntimeConfig:
     old_window: bool
 
 
+def normalize_channel_index(channel: object, channel_count: int) -> int:
+    """Validate and normalize one data-channel index."""
+
+    if isinstance(channel, (bool, np.bool_)):
+        raise TypeError(
+            f"Channel indices must be integers; received {channel!r}."
+        )
+
+    if not isinstance(channel, (int, np.integer)):
+        raise TypeError(
+            f"Channel indices must be integers; received {channel!r}."
+        )
+
+    normalized = int(channel)
+
+    if normalized < 0:
+        raise ValueError(
+            f"Channel indices must be nonnegative; received {normalized}."
+        )
+
+    if normalized >= channel_count:
+        raise ValueError(
+            f"Channel {normalized} is out of bounds for "
+            f"{channel_count} available data channels."
+        )
+
+    return normalized
+
+
 def _resolve_requested_spectra(
     requested_spectra: list[tuple[int, ...]] | None,
     channel_count: int,
@@ -128,23 +159,9 @@ def _resolve_requested_spectra(
         resolved_channels: list[int] = []
 
         for channel in spectrum:
-            # bool is technically an int in Python, but should not be accepted as a channel index.
-            if isinstance(channel, (bool, np.bool_)):
-                raise TypeError(f"Channel indices must be integers; received {channel!r}.")
-
-            if not isinstance(channel, (int, np.integer)):
-                raise TypeError(f"Channel indices must be integers; received {channel!r}.")
-
-            if channel < 0:
-                raise ValueError(f"Channel indices must be nonnegative; received {channel}.")
-
-            if channel >= channel_count:
-                raise ValueError(
-                    f"Channel {channel} is out of bounds for "
-                    f"{channel_count} available data channels."
-                )
-
-            resolved_channels.append(int(channel))
+            resolved_channels.append(
+                normalize_channel_index(channel, channel_count)
+            )
 
         resolved_spectrum = tuple(resolved_channels)
 
@@ -185,6 +202,42 @@ def _get_and_validate_selected_channels(
     return tuple(active_channels), first_config.data.shape[0], first_config.dt, first_config.t_unit
 
 
+def resolve_frequencies(spectrum_config: SpectrumConfig, dt: float) -> tuple[
+    int, NDArray[np.floating[Any]], int, int
+]:
+    # Validate and resolve the frequency bounds
+    f_max_allowed = 1 / (2 * dt)
+    f_max = spectrum_config.f_max
+
+    if f_max is None:
+        f_max = f_max_allowed
+
+        if f_max <= spectrum_config.f_min:
+            raise ValueError("f_min is larger than the Nyquist frequency.")
+
+    if f_max > f_max_allowed:
+        raise ValueError("f_max is larger than the Nyquist frequency.")
+
+    if spectrum_config.f_min < -f_max_allowed:
+        raise ValueError("f_min outside of Nyquist frequency bounds.")
+
+    # Compute how many points must be taken into account in one window to achieve the required
+    # frequency spacing in the given frequency bounds
+    window_T = (spectrum_config.frequency_points - 1) / (f_max - spectrum_config.f_min)
+    window_points = int(np.round(window_T / dt))
+    if window_points <= 0:
+        raise ValueError("Calculated window_points must be greater than zero.")
+
+    # get the frequency axis
+    freq_all = np.fft.fftfreq(window_points, dt)
+    freq_all = np.fft.fftshift(freq_all)
+
+    band_start_idx = int(np.sum(freq_all < spectrum_config.f_min))
+    band_end_idx = int(np.sum(freq_all <= f_max))
+
+    return window_points, freq_all, band_start_idx, band_end_idx
+
+
 def build_runtime_config(
     data_config_list: list[DataConfig],
     spectrum_config: SpectrumConfig,
@@ -220,28 +273,9 @@ def build_runtime_config(
         data_config_list, spectra_channels
     )
 
-    # Validate and resolve the frequency bounds
-    f_max_allowed = 1 / (2 * dt)
-    f_max = spectrum_config.f_max
-
-    if f_max is None:
-        f_max = f_max_allowed
-
-        if f_max <= spectrum_config.f_min:
-            raise ValueError("f_min is larger than the Nyquist frequency.")
-
-    if f_max > f_max_allowed:
-        raise ValueError("f_max is larger than the Nyquist frequency.")
-
-    if spectrum_config.f_min < -f_max_allowed:
-        raise ValueError("f_min outside of Nyquist frequency bounds.")
-
-    # Compute how many points must be taken into account in one window to achieve the required
-    # frequency spacing in the given frequency bounds
-    window_T = (spectrum_config.frequency_points - 1) / (f_max - spectrum_config.f_min)
-    window_points = int(np.round(window_T / dt))
-    if window_points <= 0:
-        raise ValueError("Calculated window_points must be greater than zero.")
+    window_points, freq_all, band_start_idx, band_end_idx = resolve_frequencies(
+        spectrum_config, dt
+    )
 
     # Check if enough data is available and try to lower the window count per cumulant/spectrum
     # estimate if needed
@@ -259,13 +293,6 @@ def build_runtime_config(
     orders = tuple(sorted({len(channels) for channels in spectra_channels}))
     if m < max(orders):
         raise ValueError("Not enough data points")
-
-    # get the frequency axis
-    freq_all = np.fft.fftfreq(window_points, dt)
-    freq_all = np.fft.fftshift(freq_all)
-
-    band_end_idx = int(np.sum(freq_all <= f_max))
-    band_start_idx = int(np.sum(freq_all < spectrum_config.f_min))
 
     # determine the data types based on the given precision
     if spectrum_config.precision == "single":
