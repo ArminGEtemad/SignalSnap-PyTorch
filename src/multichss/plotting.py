@@ -89,25 +89,6 @@ def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
     return ratio * maximum
 
 
-def _arcsinh_transform(data: np.ndarray, width: float) -> np.ndarray:
-    """Apply an arcsinh display transform with the specified linear width.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Values to transform.
-    width : float
-        Width of the approximately linear region around zero.
-
-    Returns
-    -------
-    np.ndarray
-        Arcsinh-scaled values with the same shape as ``data``.
-    """
-
-    return width * np.arcsinh(data / width)
-
-
 def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
     """Extract the requested real or imaginary component of complex data.
 
@@ -418,17 +399,15 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
 
     for row, component in enumerate(plot_style.plot_format):
         ax = axes[row][0]
-        raw_y = _component_data(result.spectrum, component)
+        y = _component_data(result.spectrum, component)
         width = None
 
         if plot_style.arcsinh_ratio is not None:
-            width = _arcsinh_width(raw_y, plot_style.arcsinh_ratio)
-
-        y = raw_y if width is None else _arcsinh_transform(raw_y, width)
-
+            width = _arcsinh_width(y, plot_style.arcsinh_ratio)
+        
         component_name = _component_label(component)
-
         if width is not None:
+            ax.set_yscale("asinh", linear_width=width)
             component_name += " (arcsinh scaled)"
 
         ax.plot(result.freq, y, label=f"S{result.order} {component_name}")
@@ -436,20 +415,7 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
         if result.spectrum_error is not None:
             err = np.abs(_component_data(result.spectrum_error, component))
             interval = plot_style.sigma * err
-
-            lower = raw_y - interval
-            upper = raw_y + interval
-
-            if width is not None:
-                lower = _arcsinh_transform(lower, width)
-                upper = _arcsinh_transform(upper, width)
-
-            ax.fill_between(
-                result.freq,
-                lower,
-                upper,
-                alpha=0.15,
-            )
+            ax.fill_between(result.freq, y - interval, y + interval, alpha=0.15)
 
         ax.set_xlim(plot_style.f_min, plot_style.f_max)
         ax.set_ylabel(component_name)
@@ -457,6 +423,7 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
         ax.legend()
 
     axes[-1][0].set_xlabel(f"Frequency / {result.freq_unit}")
+
     fig.tight_layout()
 
     return fig
@@ -493,36 +460,26 @@ def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -
     for col, component in enumerate(plot_style.plot_format):
         ax = axes[0][col]
         raw_z = _component_data(result.spectrum, component)
+        z = np.ma.masked_invalid(raw_z)
 
+        limit = np.nanmax(np.abs(raw_z))
         width = None
+
         if plot_style.arcsinh_ratio is not None:
             width = _arcsinh_width(raw_z, plot_style.arcsinh_ratio)
 
-        z = raw_z if width is None else _arcsinh_transform(raw_z, width)
-        z = np.ma.masked_invalid(z)
+        if width is None:
+            norm = mcolors.Normalize(vmin=-limit, vmax=limit)
+        else:
+            norm = mcolors.AsinhNorm(linear_width=width, vmin=-limit, vmax=limit)
 
-        limit = np.nanmax(np.abs(z))
-        mesh = ax.pcolormesh(
-            x,
-            y,
-            z,
-            cmap=cmap,
-            vmin=-limit,
-            vmax=limit,
-            shading="auto",
-        )
+        mesh = ax.pcolormesh(x, y, z, cmap=cmap, norm=norm, shading="auto")
 
         if result.spectrum_error is not None:
             err = np.abs(_component_data(result.spectrum_error, component))
             insignificant = np.abs(raw_z) < plot_style.sigma * err
             ax.pcolormesh(
-                x,
-                y,
-                insignificant.astype(float),
-                cmap=error_cmap,
-                vmin=0,
-                vmax=1,
-                shading="auto",
+                x, y, insignificant.astype(float), cmap=error_cmap, vmin=0, vmax=1, shading="auto"
             )
 
         component_name = _component_label(component)
