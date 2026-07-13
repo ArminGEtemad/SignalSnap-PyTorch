@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,9 +153,7 @@ def create_first_window_figure(
         )
 
         if normalized in normalized_channels:
-            raise ValueError(
-                f"Channel {normalized} was selected more than once."
-            )
+            raise ValueError(f"Channel {normalized} was selected more than once.")
 
         normalized_channels.append(normalized)
 
@@ -163,13 +162,8 @@ def create_first_window_figure(
     for channel in normalized_channels[1:]:
         data_config = data_config_list[channel]
 
-        if (
-            data_config.dt != reference_config.dt
-            or data_config.t_unit != reference_config.t_unit
-        ):
-            raise ValueError(
-                "Selected data channels must use the same dt and t_unit."
-            )
+        if data_config.dt != reference_config.dt or data_config.t_unit != reference_config.t_unit:
+            raise ValueError("Selected data channels must use the same dt and t_unit.")
 
     # Plot first window
     window_points, _, _, _ = resolve_frequencies(
@@ -220,7 +214,8 @@ def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
     table = [[str(row.get(header, "")) for header in headers] for row in rows]
 
     widths = [
-        max(len(header), *(len(row[col]) for row in table)) for col, header in enumerate(headers)
+        max(len(header), max((len(row[col]) for row in table), default=0))
+        for col, header in enumerate(headers)
     ]
 
     header_line = "  ".join(header.ljust(widths[col]) for col, header in enumerate(headers))
@@ -236,7 +231,7 @@ def build_order_1_table(result_store: SpectrumResultStore) -> str:
     order_1_results = [result for result in result_store if result.order == 1]
 
     if not order_1_results:
-        raise RuntimeError("No matching results at order 1.")
+        warnings.warn("No matching results at order 1.", RuntimeWarning, stacklevel=2)
 
     rows = []
     for result in order_1_results:
@@ -376,6 +371,19 @@ def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -
     return fig
 
 
+def create_spectrum_figure(result: SpectrumResult, plot_style: PlotStyle) -> SpectrumFigure:
+    """Create figure for specified result."""
+
+    if result.order == 2:
+        figure = _create_order_2_figure(result, plot_style)
+    elif result.order in (3, 4):
+        figure = _create_order_3_or_4_figure(result, plot_style)
+    else:
+        raise ValueError(f"Unsupported spectrum order: {result.order}")
+
+    return SpectrumFigure(figure=figure, order=result.order, channels=result.channels)
+
+
 def create_spectrum_figures(
     result_store: SpectrumResultStore, plot_style: PlotStyle
 ) -> list[SpectrumFigure]:
@@ -386,20 +394,8 @@ def create_spectrum_figures(
     for result in result_store:
         if result.order == 1:
             continue
-        elif result.order == 2:
-            figure = _create_order_2_figure(result, plot_style)
-        elif result.order in (3, 4):
-            figure = _create_order_3_or_4_figure(result, plot_style)
-        else:
-            raise ValueError(f"Unsupported spectrum order: {result.order}")
 
-        figures.append(
-            SpectrumFigure(
-                figure=figure,
-                order=result.order,
-                channels=result.channels,
-            )
-        )
+        figures.append(create_spectrum_figure(result, plot_style))
 
     return figures
 
