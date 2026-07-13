@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ._core.utils import ChannelIndex, PlotComponent, TimeUnits
+from ._core.utils import PlotComponent, TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 _SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -115,10 +115,9 @@ class SpectrumConfig(BaseModel):
     """Spectrum configuration for polyspectra calculations.
 
     :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency bounds,
-    number of frequency points, spectrum orders, window count per spectral estimate, backend torch
-    device, and compatibility options. These settings are later resolved together with
-    :class:`DataConfig` into the internal runtime configuration used by
-    :func:`multichss.calculate_spectra`.
+    number of frequency points, window count per spectral estimate, backend torch device, and
+    compatibility options. These settings are later resolved together with :class:`DataConfig` into
+    the internal runtime configuration used by :func:`multichss.calculate_spectra`.
 
     ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the frequency spacing::
 
@@ -138,10 +137,6 @@ class SpectrumConfig(BaseModel):
         ``dt`` is used.
     frequency_points : int = 100
         Number of frequency points in the specified frequency range. Must be positive.
-    spectra_channels : list[tuple[ChannelIndex, ...] | None = None
-        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
-        or cross-correlation spectrum. Each tuple entry is a channel index. If ``None``, the auto-
-        correlation spectra of orders 1 to 4 will be calculated of all available data channels.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
@@ -173,18 +168,6 @@ class SpectrumConfig(BaseModel):
     f_min: float = 0.0
     f_max: float | None = None
     frequency_points: Annotated[int, Field(ge=2)] = 100
-    spectra_channels: (
-        Annotated[
-            list[
-                tuple[ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex, ChannelIndex]
-                | tuple[ChannelIndex, ChannelIndex, ChannelIndex, ChannelIndex]
-            ],
-            Field(min_length=1),
-        ]
-        | None
-    ) = None
     m: Annotated[int, Field(gt=0)] = 10
     device: Literal["cpu", "mps", "cuda"] = "cpu"
     precision: Literal["auto", "single", "double"] = "auto"
@@ -199,15 +182,3 @@ class SpectrumConfig(BaseModel):
                 raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
 
         return self
-
-    @field_validator("spectra_channels", mode="before")
-    @classmethod
-    def validate_spectrum_request(cls, spectra_channels):
-        """
-        Check if spectra_channels contains duplicates.
-        """
-        if spectra_channels is not None:
-            if len(spectra_channels) != len(set(spectra_channels)):
-                raise ValueError("spectra_channels cannot contain duplicates.")
-
-        return spectra_channels

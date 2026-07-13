@@ -4,7 +4,11 @@ import numpy as np
 import pytest
 
 from multichss import DataConfig, SpectrumConfig, calculate_spectra
-from multichss._core.planning import build_runtime_config, iter_window_slices
+from multichss._core.planning import (
+    _resolve_requested_spectra,
+    build_runtime_config,
+    iter_window_slices,
+)
 
 auto_spectra = [(0,), (0, 0)]
 
@@ -54,7 +58,6 @@ def test_spectral_estimates_in_runtime_config(
         f_min=0.0,
         f_max=f_max,
         frequency_points=frequency_points,
-        spectra_channels=auto_spectra_channels,
         m=m,
         spectral_estimates_max=spectral_estimates_max,
     )
@@ -67,7 +70,9 @@ def test_spectral_estimates_in_runtime_config(
     )
 
     with warning_context:
-        runtime = build_runtime_config(spectrum_config, [data_config])
+        runtime = build_runtime_config(
+            [data_config], spectrum_config, auto_spectra_channels
+        )
 
     assert runtime.m == expected_m
     assert runtime.spectral_estimates == expected_unshifted_estimates
@@ -139,14 +144,13 @@ def test_window_slices_respect_interlacing(
         f_min=0.0,
         f_max=f_max,
         frequency_points=frequency_points,
-        spectra_channels=auto_spectra,
         m=m,
         spectral_estimates_max=None,
         interlacing=interlacing,
     )
     data_config = DataConfig(data=np.ones(n_data_points), dt=1.0)
 
-    runtime = build_runtime_config(spectrum_config, [data_config])
+    runtime = build_runtime_config([data_config], spectrum_config, auto_spectra)
 
     assert runtime.interlacing is interlacing
     assert runtime.spectral_estimates == expected_spectral_estimates
@@ -158,14 +162,15 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
         f_min=-0.25,
         f_max=0.25,
         frequency_points=5,
-        spectra_channels=[(0, 0, 0)],
         m=4,
         spectral_estimates_max=1,
     )
     data_config = DataConfig(data=np.ones(64), dt=1.0)
 
     with pytest.warns(RuntimeWarning, match="at least two spectral estimates"):
-        result_store = calculate_spectra(spectrum_config, [data_config])
+        result_store = calculate_spectra(
+            [data_config], spectrum_config, requested_spectra=[(0, 0, 0)]
+        )
     result = result_store.get((0, 0, 0))
 
     assert result.spectrum.shape == (result.freq.size, result.freq.size)
@@ -193,14 +198,13 @@ def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        spectra_channels=auto_spectra,
         m=4,
         interlacing=False,
         spectral_estimates_max=None,
     )
     data_config = DataConfig(data=np.ones(64), dt=1.0)
 
-    runtime = build_runtime_config(spectrum_config, [data_config])
+    runtime = build_runtime_config([data_config], spectrum_config, auto_spectra)
 
     assert runtime.m == 4
     assert runtime.spectral_estimates == 1
@@ -211,7 +215,6 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        spectra_channels=auto_spectra,
         m=4,
         interlacing=True,
         spectral_estimates_max=None,
@@ -219,7 +222,7 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
     data_config = DataConfig(data=np.ones(64), dt=1.0)
 
     with pytest.raises(ValueError, match="Interlacing was requested"):
-        build_runtime_config(spectrum_config, [data_config])
+        build_runtime_config([data_config], spectrum_config, auto_spectra)
 
 
 @pytest.mark.parametrize(
@@ -235,13 +238,14 @@ def test_runtime_config_rejects_m_below_requested_order(auto_spectra_channels, m
         f_min=0.0,
         f_max=20.0,
         frequency_points=16,
-        spectra_channels=auto_spectra_channels,
         m=m,
     )
     data_config = DataConfig(data=np.ones(50000), dt=0.001)
 
     with pytest.raises(ValueError, match="Not enough data points"):
-        build_runtime_config(spectrum_config, [data_config])
+        build_runtime_config(
+            [data_config], spectrum_config, auto_spectra_channels
+        )
 
 
 def test_runtime_config_defaults_to_all_auto_spectra_for_all_channels():
@@ -256,7 +260,7 @@ def test_runtime_config_defaults_to_all_auto_spectra_for_all_channels():
         DataConfig(data=np.ones(136), dt=1.0),
     ]
 
-    runtime = build_runtime_config(spectrum_config, data_config_list)
+    runtime = build_runtime_config(data_config_list, spectrum_config, None)
 
     assert runtime.active_channels == (0, 1)
     assert runtime.spectra_channels == (
@@ -276,10 +280,48 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
         f_min=0.0,
         f_max=0.5,
         frequency_points=9,
-        spectra_channels=[(1,)],
         m=4,
     )
     data_config = DataConfig(data=np.ones(136), dt=1.0)
 
-    with pytest.raises(ValueError, match="Channel indices must be in the range"):
-        build_runtime_config(spectrum_config, [data_config])
+    with pytest.raises(ValueError, match="out of bounds"):
+        build_runtime_config([data_config], spectrum_config, [(1,)])
+
+
+@pytest.mark.parametrize(
+    ("requested_spectra", "exception_type", "message"),
+    [
+        pytest.param([], ValueError, "at least one spectrum", id="empty-request"),
+        pytest.param([[]], TypeError, "must be a tuple", id="non-tuple-spectrum"),
+        pytest.param([()], ValueError, "between 1 and 4", id="order-zero"),
+        pytest.param(
+            [(0, 0, 0, 0, 0)], ValueError, "between 1 and 4", id="order-five"
+        ),
+        pytest.param([(True,)], TypeError, "must be integers", id="boolean-index"),
+        pytest.param([(0.0,)], TypeError, "must be integers", id="float-index"),
+        pytest.param([(-1,)], ValueError, "nonnegative", id="negative-index"),
+        pytest.param([(2,)], ValueError, "out of bounds", id="out-of-bounds-index"),
+        pytest.param(
+            [(0,), (0,)], ValueError, "cannot contain duplicates", id="duplicate-spectrum"
+        ),
+    ],
+)
+def test_resolve_requested_spectra_rejects_invalid_requests(
+    requested_spectra, exception_type, message
+):
+    with pytest.raises(exception_type, match=message):
+        _resolve_requested_spectra(requested_spectra, channel_count=2)
+
+
+def test_resolve_requested_spectra_normalizes_numpy_integer_indices():
+    requested_spectra = [(np.int64(0),), (np.int32(0), np.int64(1))]
+
+    resolved = _resolve_requested_spectra(requested_spectra, channel_count=2)
+
+    assert resolved == ((0,), (0, 1))
+    assert all(type(channel) is int for spectrum in resolved for channel in spectrum)
+
+
+def test_resolve_requested_spectra_rejects_missing_data_channels():
+    with pytest.raises(ValueError, match="At least one DataConfig is required"):
+        _resolve_requested_spectra(None, channel_count=0)

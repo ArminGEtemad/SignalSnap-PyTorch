@@ -94,29 +94,84 @@ class RuntimeConfig:
     old_window: bool
 
 
-def _get_and_validate_selected_channels(
-    spectrum_config: SpectrumConfig,
-    data_config_list: list[DataConfig],
-) -> tuple[tuple[int, ...], int, float, TimeUnits]:
-    """Resolve selected data-channel indices and validate the corresponding data."""
-    if not data_config_list:
+def _resolve_requested_spectra(
+    requested_spectra: list[tuple[int, ...]] | None,
+    channel_count: int,
+) -> tuple[tuple[int, ...], ...]:
+    """Validate and normalize the requested spectra.
+
+    If requested_spectra is None, generate auto-correlation spectra of
+    orders one through four for every available data channel.
+    """
+    if channel_count < 1:
         raise ValueError("At least one DataConfig is required.")
 
-    n_data_configs = len(data_config_list)
+    if requested_spectra is None:
+        return tuple(
+            (channel,) * order for channel in range(channel_count) for order in range(1, 5)
+        )
 
-    if spectrum_config.spectra_channels is None:
-        active_channels = list(range(n_data_configs))
-    else:
-        active_channels = []
-        for channels in spectrum_config.spectra_channels:
-            for channel in channels:
-                if channel < 0 or channel >= n_data_configs:
-                    raise ValueError(
-                        "Channel indices must be in the range of valid DataConfig list indices. "
-                        f"Channel {channel} out of bounds."
-                    )
-                if channel not in active_channels:
-                    active_channels.append(channel)
+    if not requested_spectra:
+        raise ValueError("requested_spectra must contain at least one spectrum.")
+
+    resolved: list[tuple[int, ...]] = []
+    seen: set[tuple[int, ...]] = set()
+
+    for spectrum in requested_spectra:
+        if not isinstance(spectrum, tuple):
+            raise TypeError("Each spectrum request must be a tuple of channel indices.")
+
+        order = len(spectrum)
+        if not 1 <= order <= 4:
+            raise ValueError(f"Spectrum order must be between 1 and 4; received order {order}.")
+
+        resolved_channels: list[int] = []
+
+        for channel in spectrum:
+            # bool is technically an int in Python, but should not be accepted as a channel index.
+            if isinstance(channel, (bool, np.bool_)):
+                raise TypeError(f"Channel indices must be integers; received {channel!r}.")
+
+            if not isinstance(channel, (int, np.integer)):
+                raise TypeError(f"Channel indices must be integers; received {channel!r}.")
+
+            if channel < 0:
+                raise ValueError(f"Channel indices must be nonnegative; received {channel}.")
+
+            if channel >= channel_count:
+                raise ValueError(
+                    f"Channel {channel} is out of bounds for "
+                    f"{channel_count} available data channels."
+                )
+
+            resolved_channels.append(int(channel))
+
+        resolved_spectrum = tuple(resolved_channels)
+
+        if resolved_spectrum in seen:
+            raise ValueError(
+                f"requested_spectra cannot contain duplicates; "
+                f"{resolved_spectrum} was requested more than once."
+            )
+
+        seen.add(resolved_spectrum)
+        resolved.append(resolved_spectrum)
+
+    return tuple(resolved)
+
+
+def _get_and_validate_selected_channels(
+    data_config_list: list[DataConfig],
+    spectra_channels: tuple[tuple[int, ...], ...],
+) -> tuple[tuple[int, ...], int, float, TimeUnits]:
+    """Resolve selected data-channel indices and validate the corresponding data."""
+
+    active_channels: list[int] = []
+
+    for channels in spectra_channels:
+        for channel in channels:
+            if channel not in active_channels:
+                active_channels.append(channel)
 
     first_config = data_config_list[active_channels[0]]
 
@@ -131,8 +186,9 @@ def _get_and_validate_selected_channels(
 
 
 def build_runtime_config(
-    spectrum_config: SpectrumConfig,
     data_config_list: list[DataConfig],
+    spectrum_config: SpectrumConfig,
+    requested_spectra: list[tuple[int, ...]] | None,
 ) -> RuntimeConfig:
     """Resolve user configuration into immutable runtime calculation settings.
 
@@ -142,17 +198,26 @@ def build_runtime_config(
 
     Parameters
     ----------
-    spectrum_config : :class:`SpectrumConfig`
-        User configuration for spectrum orders, frequency bounds, precision, device, windowing, and
-        related calculation options.
     data_config_list : list[:class:`DataConfig`]
         Data configurations containing the input data and sampling metadata.
+    spectrum_config : :class:`SpectrumConfig`
+        User configuration for frequency bounds, precision, device, windowing, and
+        related calculation options.
+    requested_spectra : list[tuple[int, ...]] | None
+        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
+        in ``data_config_list``. If ``None``, the auto-correlation spectra of orders 1 to 4 will be
+        calculated for all available data channels.
     """
 
     # Validate and read the channels, number of data points, and the time step from the
     # SpectrumConfig and DataConfigs
+    spectra_channels = _resolve_requested_spectra(
+        requested_spectra,
+        channel_count=len(data_config_list),
+    )
     active_channels, n_data_points, dt, t_unit = _get_and_validate_selected_channels(
-        spectrum_config, data_config_list
+        data_config_list, spectra_channels
     )
 
     # Validate and resolve the frequency bounds
@@ -177,16 +242,6 @@ def build_runtime_config(
     window_points = int(np.round(window_T / dt))
     if window_points <= 0:
         raise ValueError("Calculated window_points must be greater than zero.")
-
-    # Resolve spectra_channels, default to all auto-correlation spectra of order 1-4 if
-    # spectra_channels is not specified
-    if spectrum_config.spectra_channels is None:
-        spectra_channels = []
-        for channel in active_channels:
-            for order in range(1, 5):
-                spectra_channels.append((channel,) * order)
-    else:
-        spectra_channels = spectrum_config.spectra_channels
 
     # Check if enough data is available and try to lower the window count per cumulant/spectrum
     # estimate if needed

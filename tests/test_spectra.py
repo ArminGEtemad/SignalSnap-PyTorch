@@ -16,11 +16,12 @@ def test_c1_returns_correct_mean():
         f_min=0,
         f_max=2,
         device="cpu",
-        spectra_channels=[(0,)],
         frequency_points=21,
     )
 
-    result = calculate_spectra(spectrum_config, [data_config]).get((0,))
+    result = calculate_spectra(
+        [data_config], spectrum_config, requested_spectra=[(0,)]
+    ).get((0,))
 
     np.testing.assert_allclose(result.spectrum, np.asarray([2.0 + 0.0j]), atol=1e-12)
 
@@ -32,11 +33,12 @@ def test_c1_returns_mean_when_selected_band_excludes_dc():
         f_min=1,
         f_max=2,
         device="cpu",
-        spectra_channels=[(0,)],
         frequency_points=3,
     )
 
-    result = calculate_spectra(spectrum_config, [data_config]).get((0,))
+    result = calculate_spectra(
+        [data_config], spectrum_config, requested_spectra=[(0,)]
+    ).get((0,))
 
     np.testing.assert_allclose(result.spectrum, np.asarray([2.0 + 0.0j]), atol=1e-12)
     np.testing.assert_array_equal(result.freq, np.asarray([0.0]))

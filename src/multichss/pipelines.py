@@ -20,7 +20,10 @@ __all__ = ["calculate_spectra"]
 
 
 def calculate_spectra(
-    spectrum_config: SpectrumConfig, data_config_list: list[DataConfig]
+    data_config_list: list[DataConfig],
+    spectrum_config: SpectrumConfig,
+    *,
+    requested_spectra: list[tuple[int, ...]] | None = None,
 ) -> SpectrumResultStore:
     """Calculate requested auto- and cross-polyspectra for one or more data channels.
 
@@ -30,18 +33,27 @@ def calculate_spectra(
 
     Parameters
     ----------
-    spectrum_config : :class:`SpectrumConfig`
-        Frequency, order, windowing, precision, and device options.
     data_config_list : list[:class:`DataConfig`]
         Input signal channels and sampling metadata.
+    spectrum_config : :class:`SpectrumConfig`
+        Frequency, windowing, precision, and device options.
+    requested_spectra : list[tuple[int, ...]] | None
+        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
+        in ``data_config_list``. If ``None``, the auto-correlation spectra of orders 1 to 4 will be
+        calculated for all available data channels.
 
     Returns
     -------
     SpectrumResultStore
         Finalized spectra indexed by ``channels``.
     """
+
+    # Resolve user inputs and initialize reusable calculation state.
     runtime = _planning.build_runtime_config(
-        spectrum_config=spectrum_config, data_config_list=data_config_list
+        data_config_list=data_config_list,
+        spectrum_config=spectrum_config,
+        requested_spectra=requested_spectra,
     )
     window_buffer = _fft.prepare_window(runtime)
     third_order_cache = _spectra.build_third_order_cache(runtime) if 3 in runtime.orders else None
@@ -49,30 +61,49 @@ def calculate_spectra(
 
     failed_spectra: set[tuple[int, ...]] = set()
 
+    # Each data slice contains runtime.m windows and produces one spectral estimate for every
+    # requested spectrum.
     for start, end, shifted in _planning.iter_window_slices(runtime):
         coeffs_by_channel = {}
 
+        # Compute Fourier coefficients for each active channel.
         for channel in runtime.active_channels:
             data = data_config_list[channel].data[start:end]
             chunk = _fft.reshape_window_chunk(data, runtime)
             chunk = _fft.to_device(chunk, runtime)
-            coeffs_by_channel[channel] = _fft.compute_fft(chunk, window_buffer.window, runtime)
+            coeffs_by_channel[channel] = _fft.compute_fft(
+                chunk=chunk,
+                window=window_buffer.window,
+                runtime=runtime,
+            )
 
         intermediate_buffer = _spectra.build_intermediate_slice_buffer(
-            runtime, coeffs_by_channel, third_order_cache
+            runtime=runtime,
+            coeffs_by_channel=coeffs_by_channel,
+            third_order_cache=third_order_cache,
         )
 
+        # Compute and accumulate every requested spectrum for this data slice.
         for channels in runtime.spectra_channels:
             if channels in failed_spectra:
                 continue
 
             accumulator = accumulator_store.get(channels)
 
+            # Isolate calculation failures to the affected spectrum so the remaining spectrum
+            # requests can continue.
             try:
                 spectrum = _spectra.compute_single_spectrum(
-                    channels, intermediate_buffer, window_buffer, runtime
+                    channels=channels,
+                    intermediate_buffer=intermediate_buffer,
+                    window_buffer=window_buffer,
+                    runtime=runtime,
                 )
-                _accumulation.accumulate_spectrum(accumulator, spectrum, shifted)
+                _accumulation.accumulate_spectrum(
+                    accumulator=accumulator,
+                    single_spectrum=spectrum,
+                    shifted=shifted,
+                )
             except Exception as exc:
                 failed_spectra.add(channels)
                 warnings.warn(
@@ -81,11 +112,13 @@ def calculate_spectra(
                     stacklevel=2,
                 )
 
+    # Finalize accumulated spectra and their error estimates.
     result_store = SpectrumResultStore()
     for accumulator in accumulator_store:
         if accumulator.channels in failed_spectra:
             continue
 
+        # Isolate finalization failures so other completed spectra can still be returned.
         try:
             result = _accumulation.finalize_result(accumulator)
         except Exception as exc:
