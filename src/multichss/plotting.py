@@ -17,8 +17,9 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 
+from ._core.planning import normalize_channel_index, resolve_frequencies
 from ._core.utils import PlotComponent as _PlotComponent
-from .configurators import PlotStyle
+from .configurators import DataConfig, PlotStyle, SpectrumConfig
 from .results import SpectrumResult, SpectrumResultStore
 
 
@@ -90,6 +91,127 @@ def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColorm
             (1.0, 1.0, 1.0, insignificance_alpha),
         ],
     )
+
+
+def create_first_window_figure(
+    data_config_list: list[DataConfig],
+    spectrum_config: SpectrumConfig,
+    *,
+    channels: Iterable[int] | None = None,
+) -> Figure:
+    """Create a figure of the first FFT window of one or more data channels.
+
+    The window length is derived from ``spectrum_config`` and the sampling
+    interval of the selected data channels, using the same frequency
+    resolution logic as the spectrum calculation.
+
+    Parameters
+    ----------
+    data_config_list : list[:class:`DataConfig`]
+        Available input data channels.
+    spectrum_config : :class:`SpectrumConfig`
+        Configuration defining the requested frequency range and number of
+        frequency points.
+    channels : Iterable[int] | None, optional
+        Indices of the channels to plot. If ``None``, all available channels
+        are plotted.
+
+    Returns
+    -------
+    Figure
+        Matplotlib figure containing one subplot per selected channel.
+
+    Raises
+    ------
+    ValueError
+        If no data configurations or no channels are provided, if a channel
+        index is invalid, if selected channels have incompatible sampling
+        metadata, or if a channel is shorter than one window.
+    TypeError
+        If a channel index is not an integer.
+    """
+
+    # Validate DataConfigs and requested channels.
+    if not data_config_list:
+        raise ValueError("At least one DataConfig is required.")
+
+    if channels is None:
+        selected_channels = tuple(range(len(data_config_list)))
+    else:
+        selected_channels = tuple(channels)
+
+    if not selected_channels:
+        raise ValueError("At least one channel must be selected.")
+
+    normalized_channels: list[int] = []
+
+    for channel in selected_channels:
+        normalized = normalize_channel_index(
+            channel,
+            len(data_config_list),
+        )
+
+        if normalized in normalized_channels:
+            raise ValueError(
+                f"Channel {normalized} was selected more than once."
+            )
+
+        normalized_channels.append(normalized)
+
+    reference_config = data_config_list[normalized_channels[0]]
+
+    for channel in normalized_channels[1:]:
+        data_config = data_config_list[channel]
+
+        if (
+            data_config.dt != reference_config.dt
+            or data_config.t_unit != reference_config.t_unit
+        ):
+            raise ValueError(
+                "Selected data channels must use the same dt and t_unit."
+            )
+
+    # Plot first window
+    window_points, _, _, _ = resolve_frequencies(
+        spectrum_config=spectrum_config,
+        dt=reference_config.dt,
+    )
+
+    for channel in normalized_channels:
+        available_points = data_config_list[channel].data.shape[0]
+
+        if available_points < window_points:
+            raise ValueError(
+                f"Channel {channel} contains {available_points} samples, "
+                f"but one window requires {window_points} samples."
+            )
+
+    figure, axes = plt.subplots(
+        nrows=len(normalized_channels),
+        ncols=1,
+        figsize=(14, 3 * len(normalized_channels)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    time = np.arange(window_points) * reference_config.dt
+
+    for row, channel in enumerate(normalized_channels):
+        axis = axes[row, 0]
+        first_window = data_config_list[channel].data[:window_points]
+
+        axis.plot(time, first_window)
+        axis.set_title(f"First window for channel {channel}")
+        axis.set_ylabel("Amplitude")
+
+        # Avoid identical x-axis limits for a one-sample window.
+        if window_points > 1:
+            axis.set_xlim(time[0], time[-1])
+
+    axes[-1, 0].set_xlabel(f"t / {reference_config.t_unit}")
+    figure.tight_layout()
+
+    return figure
 
 
 def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
