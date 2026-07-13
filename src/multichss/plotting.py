@@ -414,8 +414,28 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
 
         if result.spectrum_error is not None:
             err = np.abs(_component_data(result.spectrum_error, component))
-            interval = plot_style.sigma * err
-            ax.fill_between(result.freq, y - interval, y + interval, alpha=0.15)
+
+            levels = (
+                plot_style.uncertainty_levels
+                if plot_style.uncertainty_levels is not None
+                else [plot_style.sigma]
+            )
+
+            # Draw widest first so narrower bands remain visible.
+            levels = sorted(set(levels), reverse=True)
+            number_of_levels = len(levels)
+
+            for index, level in enumerate(levels):
+                interval = level * err
+                alpha = 0.08 + 0.12 * (index + 1) / number_of_levels
+
+                ax.fill_between(
+                    result.freq,
+                    y - interval,
+                    y + interval,
+                    alpha=alpha,
+                    label=f"{level:g}σ uncertainty",
+                )
 
         ax.set_xlim(plot_style.f_min, plot_style.f_max)
         ax.set_ylabel(component_name)

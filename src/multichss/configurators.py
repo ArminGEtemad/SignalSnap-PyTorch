@@ -76,14 +76,18 @@ class PlotStyle(BaseModel):
     f_min, f_max : float
         Frequency range displayed in plots.
     sigma : float
-        Number of standard errors used for uncertainty intervals and insignificance thresholds.
+        Default standard-error level for second-order uncertainty intervals and the insignificance
+        threshold for higher-order spectra.
+    uncertainty_levels : list[float] | None
+        Standard-error levels displayed as uncertainty bands for second-order spectra. If ``None``,
+        a single band at ``sigma`` is displayed.
     arcsinh_ratio : float | None
         Relative width of the approximately linear region used for arcsinh display scaling. If
         ``None``, no scaling is applied.
     plot_format : list[Literal["re", "im"]]
         Spectrum components to plot.
     insignificance_alpha : float
-        Opacity of the overlay marking insignificant values.
+        Opacity of the overlay marking insignificant values in third- and fourth-order spectra.
     """
 
     model_config = _SHARED_CONFIG
@@ -92,6 +96,9 @@ class PlotStyle(BaseModel):
     f_max: float
 
     sigma: Annotated[float, Field(gt=0)] = 1.0
+    uncertainty_levels: (
+        Annotated[list[Annotated[float, Field(gt=0)]], Field(min_length=1)] | None
+    ) = None
     arcsinh_ratio: Annotated[float, Field(gt=0)] | None = None
     plot_format: Annotated[list[PlotComponent], Field(min_length=1)] = ["re", "im"]
     insignificance_alpha: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
