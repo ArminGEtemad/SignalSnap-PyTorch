@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 from ._core import accumulation as _accumulation
 from ._core import fft as _fft
 from ._core import planning as _planning
@@ -45,6 +47,8 @@ def calculate_spectra(
     third_order_cache = _spectra.build_third_order_cache(runtime) if 3 in runtime.orders else None
     accumulator_store = _accumulation.initialize_accumulator_store(runtime)
 
+    failed_spectra: set[tuple[int, ...]] = set()
+
     for start, end, shifted in _planning.iter_window_slices(runtime):
         coeffs_by_channel = {}
 
@@ -59,17 +63,40 @@ def calculate_spectra(
         )
 
         for channels in runtime.spectra_channels:
-            spectrum = _spectra.compute_single_spectrum(
-                channels=channels,
-                intermediate_buffer=intermediate_buffer,
-                window_buffer=window_buffer,
-                runtime=runtime,
-            )
+            if channels in failed_spectra:
+                continue
+
             accumulator = accumulator_store.get(channels)
-            _accumulation.accumulate_spectrum(accumulator, spectrum, shifted=shifted)
+
+            try:
+                spectrum = _spectra.compute_single_spectrum(
+                    channels, intermediate_buffer, window_buffer, runtime
+                )
+                _accumulation.accumulate_spectrum(accumulator, spectrum, shifted)
+            except Exception as exc:
+                failed_spectra.add(channels)
+                warnings.warn(
+                    f"Calculation failed for spectrum {channels}: {type(exc).__name__}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
     result_store = SpectrumResultStore()
     for accumulator in accumulator_store:
-        result_store.add(_accumulation.finalize_result(accumulator))
+        if accumulator.channels in failed_spectra:
+            continue
+
+        try:
+            result = _accumulation.finalize_result(accumulator)
+        except Exception as exc:
+            warnings.warn(
+                f"Could not finalize spectrum for channels {accumulator.channels}: "
+                f"{type(exc).__name__}: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+
+        result_store.add(result)
 
     return result_store
