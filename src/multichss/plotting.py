@@ -26,16 +26,56 @@ from .results import SpectrumResult, SpectrumResultStore
 
 @dataclass(frozen=True)
 class SpectrumFigure:
+    """Matplotlib figure and metadata for one plotted spectrum.
+
+    Attributes
+    ----------
+    figure : Figure
+        Matplotlib figure containing the plotted spectrum.
+    order : int
+        Order of the plotted spectrum.
+    channels : tuple[int, ...]
+        Data-channel indices identifying the plotted auto- or cross-spectrum.
+    """
+
     figure: Figure
     order: int
     channels: tuple[int, ...]
 
     def filename(self, extension: str = "png") -> str:
+        """Build a filename from the spectrum order and channel indices.
+
+        Parameters
+        ----------
+        extension : str = "png"
+            Filename extension, without a leading period.
+
+        Returns
+        -------
+        str
+            Filename in the form ``s{order}_channels_{channels}.{extension}``.
+        """
+
         channel_label = "_".join(map(str, self.channels))
         return f"s{self.order}_channels_{channel_label}.{extension}"
 
 
 def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
+    """Calculate the width of the linear region for arcsinh display scaling.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Values whose finite maximum absolute magnitude sets the scale.
+    ratio : float
+        Fraction of the maximum magnitude used as the linear-region width.
+
+    Returns
+    -------
+    float | None
+        Scaling width, or ``None`` if the data has no finite nonzero values.
+    """
+
     finite = np.asarray(data)[np.isfinite(data)]
 
     if finite.size == 0:
@@ -50,10 +90,45 @@ def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
 
 
 def _arcsinh_transform(data: np.ndarray, width: float) -> np.ndarray:
+    """Apply an arcsinh display transform with the specified linear width.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Values to transform.
+    width : float
+        Width of the approximately linear region around zero.
+
+    Returns
+    -------
+    np.ndarray
+        Arcsinh-scaled values with the same shape as ``data``.
+    """
+
     return width * np.arcsinh(data / width)
 
 
 def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
+    """Extract the requested real or imaginary component of complex data.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Complex-valued spectrum data.
+    component : Literal["re", "im"]
+        Component to extract.
+
+    Returns
+    -------
+    np.ndarray
+        Real-valued view or array containing the selected component.
+
+    Raises
+    ------
+    ValueError
+        If ``component`` is not ``"re"`` or ``"im"``.
+    """
+
     if component == "re":
         return np.real(data)
     if component == "im":
@@ -62,10 +137,31 @@ def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
 
 
 def _component_label(component: _PlotComponent) -> str:
+    """Return the display label for a spectrum component.
+
+    Parameters
+    ----------
+    component : Literal["re", "im"]
+        Spectrum component to label.
+
+    Returns
+    -------
+    str
+        ``"Real"`` for ``"re"`` and ``"Imaginary"`` for ``"im"``.
+    """
+
     return "Real" if component == "re" else "Imaginary"
 
 
 def _custom_colormap() -> LinearSegmentedColormap:
+    """Create the diverging colormap used for higher-order spectra.
+
+    Returns
+    -------
+    LinearSegmentedColormap
+        Blue-gray-red colormap centered on a neutral gray.
+    """
+
     colors = (
         np.array(
             [
@@ -85,6 +181,19 @@ def _custom_colormap() -> LinearSegmentedColormap:
 
 
 def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColormap:
+    """Create the transparency overlay used to mark insignificant values.
+
+    Parameters
+    ----------
+    insignificance_alpha : float
+        Opacity assigned to values marked as insignificant.
+
+    Returns
+    -------
+    LinearSegmentedColormap
+        Colormap ranging from transparent to white at the requested opacity.
+    """
+
     return LinearSegmentedColormap.from_list(
         "multichss_insignificant",
         [
@@ -209,6 +318,21 @@ def create_first_window_figure(
 
 
 def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
+    """Format order-1 spectrum values as a fixed-width text table.
+
+    Parameters
+    ----------
+    rows : list[dict[str, object]]
+        Table rows keyed by the order-1 column headings. Missing values are formatted as empty
+        strings.
+
+    Returns
+    -------
+    str
+        Table containing a header and separator followed by the supplied rows. If ``rows`` is empty,
+        only the header and separator are returned.
+    """
+
     headers = ["Channels", "Real", "Imag", "Error real", "Error imag"]
 
     table = [[str(row.get(header, "")) for header in headers] for row in rows]
@@ -228,6 +352,24 @@ def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
 
 
 def build_order_1_table(result_store: SpectrumResultStore) -> str:
+    """Build a text table from the order-1 results in a result store.
+
+    Parameters
+    ----------
+    result_store : :class:`SpectrumResultStore`
+        Calculated spectra from which order-1 results are selected.
+
+    Returns
+    -------
+    str
+        Fixed-width table of channel indices, complex spectrum values, and error estimates.
+
+    Warns
+    -----
+    RuntimeWarning
+        If the store contains no order-1 results. A header-only table is still returned.
+    """
+
     order_1_results = [result for result in result_store if result.order == 1]
 
     if not order_1_results:
@@ -251,6 +393,20 @@ def build_order_1_table(result_store: SpectrumResultStore) -> str:
 
 
 def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
+    """Create a line-plot figure for an order-2 spectrum result.
+
+    Parameters
+    ----------
+    result : :class:`SpectrumResult`
+        Order-2 spectrum and optional error estimate to plot.
+    plot_style : :class:`PlotStyle`
+        Frequency limits, components, scaling, and significance settings for the plot.
+
+    Returns
+    -------
+    Figure
+        Matplotlib figure containing one subplot per requested spectrum component.
+    """
 
     fig, axes = plt.subplots(
         len(plot_style.plot_format),
@@ -307,6 +463,21 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
 
 
 def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -> Figure:
+    """Create a two-dimensional color-map figure for an order-3 or order-4 result.
+
+    Parameters
+    ----------
+    result : :class:`SpectrumResult`
+        Order-3 or order-4 spectrum and optional error estimate to plot.
+    plot_style : :class:`PlotStyle`
+        Frequency limits, components, scaling, and significance settings for the plot.
+
+    Returns
+    -------
+    Figure
+        Matplotlib figure containing one color-map subplot per requested spectrum component.
+    """
+
     cmap = _custom_colormap()
     error_cmap = _custom_error_colormap(plot_style.insignificance_alpha)
 
@@ -372,7 +543,25 @@ def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -
 
 
 def create_spectrum_figure(result: SpectrumResult, plot_style: PlotStyle) -> SpectrumFigure:
-    """Create figure for specified result."""
+    """Create a figure for one calculated spectrum.
+
+    Parameters
+    ----------
+    result : :class:`SpectrumResult`
+        Order-2, order-3, or order-4 spectrum to plot.
+    plot_style : :class:`PlotStyle`
+        Frequency limits, components, scaling, and significance settings for the plot.
+
+    Returns
+    -------
+    :class:`SpectrumFigure`
+        Matplotlib figure together with its spectrum order and channel metadata.
+
+    Raises
+    ------
+    ValueError
+        If ``result`` is not an order-2, order-3, or order-4 spectrum.
+    """
 
     if result.order == 2:
         figure = _create_order_2_figure(result, plot_style)
@@ -387,7 +576,24 @@ def create_spectrum_figure(result: SpectrumResult, plot_style: PlotStyle) -> Spe
 def create_spectrum_figures(
     result_store: SpectrumResultStore, plot_style: PlotStyle
 ) -> list[SpectrumFigure]:
-    """Create figures for calculated spectra of orders 2 through 4."""
+    """Create figures for all order-2 through order-4 results in a result store.
+
+    Order-1 results are skipped because they are represented as text by
+    :func:`build_order_1_table`.
+
+    Parameters
+    ----------
+    result_store : :class:`SpectrumResultStore`
+        Calculated spectra to plot.
+    plot_style : :class:`PlotStyle`
+        Frequency limits, components, scaling, and significance settings shared by all figures.
+
+    Returns
+    -------
+    list[:class:`SpectrumFigure`]
+        Figures in result-store iteration order. An empty list is returned if the store contains no
+        results of orders 2 through 4.
+    """
 
     figures = []
 
@@ -401,13 +607,37 @@ def create_spectrum_figures(
 
 
 def save_figures(
-    figures: Iterable[SpectrumFigure],
+    figures: list[SpectrumFigure],
     output_folder: str | Path,
     *,
     extension: str = "png",
     dpi: int = 150,
     close: bool = True,
 ) -> list[Path]:
+    """Save spectrum figures to an output folder.
+
+    Filenames are generated from each figure's spectrum order and channel indices using
+    :meth:`SpectrumFigure.filename`.
+
+    Parameters
+    ----------
+    figures : list[:class:`SpectrumFigure`]
+        Spectrum figures to save.
+    output_folder : str | Path
+        Destination directory. It and any missing parent directories are created automatically.
+    extension : str = "png"
+        Output filename extension, without a leading period.
+    dpi : int = 150
+        Resolution passed to Matplotlib when saving each figure.
+    close : bool = True
+        Whether to close each Matplotlib figure after saving it.
+
+    Returns
+    -------
+    list[Path]
+        Paths of the saved figures in input iteration order.
+    """
+
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
