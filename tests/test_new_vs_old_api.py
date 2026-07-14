@@ -49,10 +49,14 @@ def prepared_data():
         assert isinstance(dataset, h5py.Dataset)
         data = dataset[...]
 
-    return [
-        DataConfig(data=data[:1000, :, 0].reshape(-1), dt=2.0, t_unit="ns"),
-        DataConfig(data=data[:1000, :, 1].reshape(-1), dt=2.0, t_unit="ns"),
-    ]
+    return DataConfig(
+        channels=[
+            data[:1000, :, 0].reshape(-1),
+            data[:1000, :, 1].reshape(-1),
+        ],
+        dt=2.0,
+        t_unit="ns",
+    )
 
 
 def _build_spectrum_config(name: str, channels, legacy_freqs) -> SpectrumConfig:

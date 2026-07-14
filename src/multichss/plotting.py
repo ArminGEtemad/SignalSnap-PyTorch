@@ -18,6 +18,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 
+from ._core.data_access import get_sample_count, open_channels, read_channel
 from ._core.planning import normalize_channel_index, resolve_frequencies
 from ._core.utils import PlotComponent as _PlotComponent
 from .configurators import DataConfig, PlotStyle, SpectrumConfig
@@ -185,7 +186,7 @@ def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColorm
 
 
 def create_first_window_figure(
-    data_config_list: list[DataConfig],
+    data_config: DataConfig,
     spectrum_config: SpectrumConfig,
     *,
     channels: Iterable[int] | None = None,
@@ -198,14 +199,14 @@ def create_first_window_figure(
 
     Parameters
     ----------
-    data_config_list : list[:class:`DataConfig`]
-        Available input data channels.
+    data_config : :class:`DataConfig`
+        Input channels and their shared sampling metadata. Channels may be in-memory arrays or
+        HDF5-backed channels.
     spectrum_config : :class:`SpectrumConfig`
-        Configuration defining the requested frequency range and number of
-        frequency points.
+        Configuration defining the requested frequency range and number of frequency points.
     channels : Iterable[int] | None, optional
-        Indices of the channels to plot. If ``None``, all available channels
-        are plotted.
+        Indices of the channels to plot. Indices refer to entries in ``data_config.channels``. If
+        ``None``, all available channels are plotted.
 
     Returns
     -------
@@ -215,19 +216,14 @@ def create_first_window_figure(
     Raises
     ------
     ValueError
-        If no data configurations or no channels are provided, if a channel
-        index is invalid, if selected channels have incompatible sampling
-        metadata, or if a channel is shorter than one window.
+        If a channel index is invalid or if a channel is shorter than one window.
     TypeError
         If a channel index is not an integer.
     """
 
     # Validate DataConfigs and requested channels.
-    if not data_config_list:
-        raise ValueError("At least one DataConfig is required.")
-
     if channels is None:
-        selected_channels = tuple(range(len(data_config_list)))
+        selected_channels = tuple(range(len(data_config.channels)))
     else:
         selected_channels = tuple(channels)
 
@@ -237,62 +233,49 @@ def create_first_window_figure(
     normalized_channels: list[int] = []
 
     for channel in selected_channels:
-        normalized = normalize_channel_index(
-            channel,
-            len(data_config_list),
-        )
+        normalized = normalize_channel_index(channel, len(data_config.channels))
 
         if normalized in normalized_channels:
             raise ValueError(f"Channel {normalized} was selected more than once.")
 
         normalized_channels.append(normalized)
 
-    reference_config = data_config_list[normalized_channels[0]]
-
-    for channel in normalized_channels[1:]:
-        data_config = data_config_list[channel]
-
-        if data_config.dt != reference_config.dt or data_config.t_unit != reference_config.t_unit:
-            raise ValueError("Selected data channels must use the same dt and t_unit.")
-
     # Plot first window
-    window_points, _, _, _ = resolve_frequencies(
-        spectrum_config=spectrum_config,
-        dt=reference_config.dt,
-    )
+    window_points, _, _, _ = resolve_frequencies(spectrum_config=spectrum_config, dt=data_config.dt)
 
-    for channel in normalized_channels:
-        available_points = data_config_list[channel].data.shape[0]
+    with open_channels(data_config, normalized_channels) as opened_channels:
+        for channel in normalized_channels:
+            available_points = get_sample_count(opened_channels[channel])
 
-        if available_points < window_points:
-            raise ValueError(
-                f"Channel {channel} contains {available_points} samples, "
-                f"but one window requires {window_points} samples."
-            )
+            if available_points < window_points:
+                raise ValueError(
+                    f"Channel {channel} contains {available_points} samples, "
+                    f"but one window requires {window_points} samples."
+                )
 
-    figure, axes = plt.subplots(
-        nrows=len(normalized_channels),
-        ncols=1,
-        figsize=(14, 3 * len(normalized_channels)),
-        squeeze=False,
-        sharex=True,
-    )
+        figure, axes = plt.subplots(
+            nrows=len(normalized_channels),
+            ncols=1,
+            figsize=(14, 3 * len(normalized_channels)),
+            squeeze=False,
+            sharex=True,
+        )
 
-    time = np.arange(window_points) * reference_config.dt
+        time = np.arange(window_points) * data_config.dt
 
-    for row, channel in enumerate(normalized_channels):
-        axis = axes[row, 0]
-        first_window = data_config_list[channel].data[:window_points]
+        for row, channel in enumerate(normalized_channels):
+            axis = axes[row, 0]
+            first_window = read_channel(opened_channels[channel], start=0, stop=window_points)
 
-        axis.plot(time, first_window)
-        axis.set_title(f"First window for channel {channel}")
-        axis.set_ylabel("Amplitude")
+            axis.plot(time, first_window)
+            axis.set_title(f"First window for channel {channel}")
+            axis.set_ylabel("Amplitude")
 
-        # Avoid identical x-axis limits for a one-sample window.
-        if window_points > 1:
-            axis.set_xlim(time[0], time[-1])
+            # Avoid identical x-axis limits for a one-sample window.
+            if window_points > 1:
+                axis.set_xlim(time[0], time[-1])
 
-    axes[-1, 0].set_xlabel(f"t / {reference_config.t_unit}")
+    axes[-1, 0].set_xlabel(f"t / {data_config.t_unit}")
     figure.tight_layout()
 
     return figure
@@ -404,7 +387,7 @@ def _create_order_2_figure(result: SpectrumResult, plot_style: PlotStyle) -> Fig
 
         if plot_style.arcsinh_ratio is not None:
             width = _arcsinh_width(y, plot_style.arcsinh_ratio)
-        
+
         component_name = _component_label(component)
         if width is not None:
             ax.set_yscale("asinh", linear_width=width)

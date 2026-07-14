@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
-from .configurators import DataConfig, PlotStyle, SpectrumConfig
+from .configurators import DataConfig, HDF5Channel, PlotStyle, SpectrumConfig
 from .pipelines import calculate_spectra
 from .results import SpectrumResult, SpectrumResultStore
 
 __all__ = [
     "DataConfig",
+    "HDF5Channel",
     "PlotStyle",
     "SpectrumConfig",
     "calculate_spectra",

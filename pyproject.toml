@@ -21,13 +21,13 @@ dependencies = [
     "numpy>=2.0.0",
     "matplotlib>=3.10.7",
     "torch>=2.6.0",
-    "pydantic>=2.5.0"
+    "pydantic>=2.5.0",
+    "h5py>=3.16.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest",
-    "h5py",
 ]
 
 [project.urls]

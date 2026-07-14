@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -23,22 +24,23 @@ class DataConfig(BaseModel):
     """Configuration for data used in polyspectra calculations.
 
     These settings are later resolved together with :class:`SpectrumConfig` into the internal
-    runtime configuration used by :func:`multichss.calculate_spectra`.
+    runtime configuration used by :func:`~multichss.calculate_spectra`.
 
     Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
     used to determine the number of data points (``window_points``) used for each Fourier
-    transform::
+    transform:
 
         window_points = 1 / (dt * df)
 
-    and to determine the Nyquist frequency::
+    and to determine the Nyquist frequency:
 
         f_nyquist = 1 / (2 * dt)
 
     Attributes
     ----------
-    data : ArrayLike with a shape attribute
-        The recorded (real) signal data.
+    channels : tuple[Any, ...]
+        List of data channels. Each channel is recorded (real) signal data and can either be an
+        array with a shape and dtype attribute or a :class:`HDF5Channel`.
     dt : float
         The time interval between two consecutive data points. Must be positive.
     t_unit : Literal["s", "ms", "us", "ns", "ps"]
@@ -47,25 +49,118 @@ class DataConfig(BaseModel):
 
     model_config = _SHARED_CONFIG
 
-    data: Any
+    channels: Annotated[tuple[Any, ...], Field(min_length=1)]
     dt: Annotated[float, Field(gt=0)]
     t_unit: TimeUnits = "s"
 
-    @field_validator("data")
+    @field_validator("channels")
     @classmethod
-    def validate_data(cls, v: Any) -> Any:
-        if v is None:
-            raise ValueError("data cannot be None.")
-        if not hasattr(v, "shape"):
-            raise ValueError("DataConfig.data must provide a shape attribute.")
-        if len(v.shape) == 0 or v.shape[0] <= 0:
-            raise ValueError("DataConfig.data must contain at least one sample.")
-        if np.iscomplexobj(v):
-            raise TypeError("Input data cannot be complex.")
-        if len(v.shape) != 1:
-            raise ValueError("DataConfig.data must be one-dimensional.")
+    def validate_channels(cls, channels: tuple[Any, ...]) -> tuple[Any, ...]:
+        for index, channel in enumerate(channels):
+            if isinstance(channel, HDF5Channel):
+                continue
 
-        return v
+            if channel is None:
+                raise ValueError(f"Channel {index} cannot be None.")
+
+            if not hasattr(channel, "shape"):
+                raise TypeError(f"Array channel {index} must provide a shape attribute.")
+
+            if len(channel.shape) != 1:
+                raise ValueError(f"Array channel {index} must be one-dimensional.")
+
+            if channel.shape[0] == 0:
+                raise ValueError(f"Array channel {index} cannot be empty.")
+
+            try:
+                channel_dtype = np.dtype(channel.dtype)
+            except TypeError:
+                channel_dtype = np.asarray(channel).dtype
+
+            if np.issubdtype(channel_dtype, np.complexfloating):
+                raise TypeError(f"Array channel {index} cannot be complex.")
+
+            is_numeric = np.issubdtype(channel_dtype, np.number)
+            is_boolean = np.issubdtype(channel_dtype, np.bool_)
+
+            if not is_numeric and not is_boolean:
+                raise TypeError(
+                    f"Array channel {index} must be numeric; received dtype {channel_dtype}."
+                )
+
+        return channels
+
+
+class HDF5Channel(BaseModel):
+    """Location of one signal channel inside an HDF5 dataset."""
+
+    model_config = _SHARED_CONFIG
+
+    file: Path
+    dataset: str
+    selection: tuple[Any, ...]
+
+    @field_validator("dataset")
+    @classmethod
+    def validate_dataset(cls, value: str) -> str:
+        if not value:
+            raise ValueError("dataset cannot be empty.")
+        return value
+
+    @field_validator("selection")
+    @classmethod
+    def validate_selection(cls, value: tuple[Any, ...]) -> tuple[Any, ...]:
+        if not value:
+            raise ValueError("selection cannot be empty.")
+
+        normalized = []
+
+        for item in value:
+            if isinstance(item, (bool, np.bool_)):
+                raise TypeError("HDF5 selection entries must be integers or slices.")
+
+            if isinstance(item, np.integer):
+                item = int(item)
+
+            if not isinstance(item, (int, slice)):
+                raise TypeError("HDF5 selection entries must be integers or slices.")
+
+            if isinstance(item, slice):
+                if item.start is None:
+                    start = None
+                else:
+                    if isinstance(item.start, (bool, np.bool_)):
+                        raise TypeError("HDF5 slice start must be an integer or None.")
+                    if not isinstance(item.start, (int, np.integer)):
+                        raise TypeError("HDF5 slice start must be an integer or None.")
+                    start = int(item.start)
+
+                if item.stop is None:
+                    stop = None
+                else:
+                    if isinstance(item.stop, (bool, np.bool_)):
+                        raise TypeError("HDF5 slice stop must be an integer or None.")
+                    if not isinstance(item.stop, (int, np.integer)):
+                        raise TypeError("HDF5 slice stop must be an integer or None.")
+                    stop = int(item.stop)
+
+                if item.step is None:
+                    step = None
+                else:
+                    if isinstance(item.step, (bool, np.bool_)):
+                        raise TypeError("HDF5 slice step must be an integer or None.")
+                    if not isinstance(item.step, (int, np.integer)):
+                        raise TypeError("HDF5 slice step must be an integer or None.")
+                    step = int(item.step)
+
+                if step not in (None, 1):
+                    raise ValueError("HDF5 slice steps other than 1 are not supported.")
+
+                normalized.append(slice(start, stop, step))
+            else:
+                normalized.append(item)
+
+        return tuple(normalized)
 
 
 class PlotStyle(BaseModel):
@@ -124,14 +219,21 @@ class SpectrumConfig(BaseModel):
     :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency bounds,
     number of frequency points, window count per spectral estimate, backend torch device, and
     compatibility options. These settings are later resolved together with :class:`DataConfig` into
-    the internal runtime configuration used by :func:`multichss.calculate_spectra`.
+    the internal runtime configuration used by :func:`~multichss.calculate_spectra`.
 
-    ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the frequency spacing::
+    ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the REQUESTED frequency
+    spacing:
 
-        df = (f_max - f_min) / (frequency_points - 1)
+        df* = (f_max - f_min) / (frequency_points - 1)
+
+    (!) The discrete Fourier transform cannot result in arbitrary frequency spacings with a given
+    sample spacing. The library will use the closest available frequency spacing.
+
+    (!) The discrete Fourier transform always includes the frequency ``f=0`` and all frequency
+    points in the range between ``f_min`` and ``f_max`` are integer multiples of the actual df.
 
     Together with ``dt`` from :class:`DataConfig`, ``df`` will be used to determine the number of
-    data points (``window_points``) used for each Fourier transform::
+    data points (``window_points``) used for each Fourier transform:
 
         window_points = 1 / (dt * df)
 
