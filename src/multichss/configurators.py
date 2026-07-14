@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ._core.utils import PlotComponent, TimeUnits
+from ._core.utils import TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 _SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -161,56 +161,6 @@ class HDF5Channel(BaseModel):
                 normalized.append(item)
 
         return tuple(normalized)
-
-
-class PlotStyle(BaseModel):
-    """Configuration for plotting calculated polyspectra.
-
-    Attributes
-    ----------
-    f_min, f_max : float
-        Frequency range displayed in plots.
-    sigma : float
-        Default standard-error level for second-order uncertainty intervals and the insignificance
-        threshold for higher-order spectra.
-    uncertainty_levels : list[float] | None
-        Standard-error levels displayed as uncertainty bands for second-order spectra. If ``None``,
-        a single band at ``sigma`` is displayed.
-    arcsinh_ratio : float | None
-        Relative width of the approximately linear region used for arcsinh display scaling. If
-        ``None``, no scaling is applied.
-    plot_format : list[Literal["re", "im"]]
-        Spectrum components to plot.
-    insignificance_alpha : float
-        Opacity of the overlay marking insignificant values in third- and fourth-order spectra.
-    """
-
-    model_config = _SHARED_CONFIG
-
-    f_min: float
-    f_max: float
-
-    sigma: Annotated[float, Field(gt=0)] = 1.0
-    uncertainty_levels: (
-        Annotated[list[Annotated[float, Field(gt=0)]], Field(min_length=1)] | None
-    ) = None
-    arcsinh_ratio: Annotated[float, Field(gt=0)] | None = None
-    plot_format: Annotated[list[PlotComponent], Field(min_length=1)] = ["re", "im"]
-    insignificance_alpha: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
-
-    @field_validator("plot_format")
-    @classmethod
-    def ensure_unique_formats(cls, v: list[PlotComponent]) -> list[PlotComponent]:
-        """Ensure plot_format does not contain duplicate components."""
-        if len(v) != len(set(v)):
-            raise ValueError("plot_format cannot contain duplicate elements.")
-        return v
-
-    @model_validator(mode="after")
-    def validate_limits(self) -> PlotStyle:
-        if self.f_min >= self.f_max:
-            raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
-        return self
 
 
 class SpectrumConfig(BaseModel):

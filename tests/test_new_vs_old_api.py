@@ -50,10 +50,10 @@ def prepared_data():
         data = dataset[...]
 
     return DataConfig(
-        channels=[
+        channels=(
             data[:1000, :, 0].reshape(-1),
             data[:1000, :, 1].reshape(-1),
-        ],
+        ),
         dt=2.0,
         t_unit="ns",
     )

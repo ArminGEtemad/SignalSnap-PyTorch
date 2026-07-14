@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import warnings
 
+from tqdm.auto import tqdm
+
 from ._core import accumulation as _accumulation
 from ._core import data_access as _data_access
 from ._core import fft as _fft
@@ -25,6 +27,7 @@ def calculate_spectra(
     spectrum_config: SpectrumConfig,
     *,
     requested_spectra: list[tuple[int, ...]] | None = None,
+    show_progress: bool = True,
 ) -> SpectrumResultStore:
     """Calculate requested auto- and cross-polyspectra for one or more data channels.
 
@@ -43,6 +46,11 @@ def calculate_spectra(
         or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
         in ``data_config.channels``. If ``None``, the auto-correlation spectra of orders 1 to 4 will
         be calculated for all available data channels.
+    show_progress : bool
+        Display a progress bar with elapsed time and an estimated time remaining. Progress is
+        measured in spectral estimates, each of which includes reading the required channel data,
+        computing Fourier coefficients, and accumulating every requested spectrum. Defaults to
+        ``True``.
 
     Returns
     -------
@@ -73,7 +81,15 @@ def calculate_spectra(
 
         # Each data slice contains runtime.m windows and produces one spectral estimate for every
         # requested spectrum.
-        for start, end, shifted in _planning.iter_window_slices(runtime):
+        window_slices = _planning.iter_window_slices(runtime)
+
+        for start, end, shifted in tqdm(
+            window_slices,
+            total=_planning.window_slice_count(runtime),
+            desc="Calculating spectra",
+            unit=" estimates",
+            disable=not show_progress,
+        ):
             coeffs_by_channel = {}
 
             # Compute Fourier coefficients for each active channel.

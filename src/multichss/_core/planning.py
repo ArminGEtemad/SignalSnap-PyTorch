@@ -359,11 +359,22 @@ def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]
 
     if runtime.interlacing:
         shift = runtime.window_points // 2
-        n_chunks_shifted = max(
-            0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size
-        )
-        shifted_estimates = min(runtime.spectral_estimates, n_chunks_shifted)
+        shifted_estimates = window_slice_count(runtime) - runtime.spectral_estimates
         for chunk_index in range(shifted_estimates):
             start = chunk_index * chunk_size + shift
             end = start + chunk_size
             yield start, end, True
+
+
+def window_slice_count(runtime: RuntimeConfig) -> int:
+    """Return the total number of unshifted and shifted spectral estimates."""
+
+    total = runtime.spectral_estimates
+    if not runtime.interlacing:
+        return total
+
+    chunk_size = runtime.window_points * runtime.m
+    available_shifted = max(
+        0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size
+    )
+    return total + min(runtime.spectral_estimates, available_shifted)
