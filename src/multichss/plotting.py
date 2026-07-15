@@ -13,11 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
-import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.figure import Figure
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ._core import data_access as _data_access
@@ -25,6 +21,20 @@ from ._core import planning as _planning
 from ._core.utils import PlotComponent as _PlotComponent
 from .configurators import _SHARED_CONFIG, DataConfig, SpectrumConfig
 from .results import SpectrumResult, SpectrumResultStore
+
+try:
+    import matplotlib.colors as mcolors
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.figure import Figure
+except ModuleNotFoundError as exc:
+    if exc.name != "matplotlib":
+        raise
+
+    raise ModuleNotFoundError(
+        "Plotting support requires the optional dependency 'matplotlib'. "
+        'Install it with: pip install "multichss[plotting]"'
+    ) from None
 
 
 class PlotStyle(BaseModel):
@@ -293,7 +303,9 @@ def create_first_window_figure(
         normalized_channels.append(normalized)
 
     # Plot first window
-    window_points, _, _, _ = _planning.resolve_frequencies(spectrum_config=spectrum_config, dt=data_config.dt)
+    window_points, _, _, _ = _planning.resolve_frequencies(
+        spectrum_config=spectrum_config, dt=data_config.dt
+    )
 
     with _data_access.open_channels(data_config, normalized_channels) as opened_channels:
         for channel in normalized_channels:
@@ -317,7 +329,9 @@ def create_first_window_figure(
 
         for row, channel in enumerate(normalized_channels):
             axis = axes[row, 0]
-            first_window = _data_access.read_channel(opened_channels[channel], start=0, stop=window_points)
+            first_window = _data_access.read_channel(
+                opened_channels[channel], start=0, stop=window_points
+            )
 
             axis.plot(time, first_window)
             axis.set_title(f"First window for channel {channel}")

@@ -19,16 +19,18 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.0.0",
-    "matplotlib>=3.10.7",
     "torch>=2.6.0",
     "pydantic>=2.5.0",
-    "h5py>=3.16.0",
     "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
+hdf5 = ["h5py>=3.16.0"]
+plotting = ["matplotlib>=3.10.7"]
 test = [
     "pytest",
+    "h5py>=3.16.0",
+    "matplotlib>=3.10.7",
 ]
 
 [project.urls]

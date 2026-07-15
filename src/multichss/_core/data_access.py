@@ -12,14 +12,31 @@ from collections.abc import Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-import h5py
 import numpy as np
 
 from ..configurators import DataConfig, HDF5Channel
 
+if TYPE_CHECKING:
+    import h5py
+
 NormalizedSelector = int | slice
+
+
+def _require_h5py() -> Any:
+    try:
+        import h5py
+    except ModuleNotFoundError as exc:
+        if exc.name != "h5py":
+            raise
+
+        raise ModuleNotFoundError(
+            "HDF5 support requires the optional dependency 'h5py'. "
+            'Install it with: pip install "multichss[hdf5]"'
+        ) from None
+
+    return h5py
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,24 +241,28 @@ def normalize_hdf5_selection(
     return tuple(normalized), tuple(selected_shape)
 
 
-def validate_hdf5_dataset(file: h5py.File, channel: HDF5Channel) -> h5py.Dataset:
+def _validate_hdf5_dataset(file: h5py.File, channel: HDF5Channel) -> h5py.Dataset:
+    h5py = _require_h5py()
+
     if channel.dataset not in file:
         raise KeyError(
             f"Dataset {channel.dataset!r} does not exist in HDF5 file {str(channel.file)!r}."
         )
 
-    obj = file[channel.dataset]
+    dataset = file[channel.dataset]
 
-    if not isinstance(obj, h5py.Dataset):
+    if not isinstance(dataset, h5py.Dataset):
         raise TypeError(f"HDF5 path {channel.dataset!r} is not a dataset.")
-
-    if np.issubdtype(obj.dtype, np.complexfloating):
+    
+    dataset = cast("h5py.Dataset", dataset)
+    
+    if np.issubdtype(dataset.dtype, np.complexfloating):
         raise TypeError("Complex HDF5 datasets are not supported.")
 
-    if not np.issubdtype(obj.dtype, np.number) and not np.issubdtype(obj.dtype, np.bool_):
-        raise TypeError(f"HDF5 dataset dtype {obj.dtype} is not numeric.")
+    if not np.issubdtype(dataset.dtype, np.number) and not np.issubdtype(dataset.dtype, np.bool_):
+        raise TypeError(f"HDF5 dataset dtype {dataset.dtype} is not numeric.")
 
-    return obj
+    return dataset
 
 
 RuntimeChannel = Any | HDF5ChannelState
@@ -263,12 +284,13 @@ def open_channels(
                 opened_channels[channel_index] = channel
                 continue
 
+            h5py = _require_h5py()
             path = channel.file.expanduser().resolve()
 
             if path not in files:
                 files[path] = stack.enter_context(h5py.File(path, mode="r"))
 
-            dataset = validate_hdf5_dataset(files[path], channel)
+            dataset = _validate_hdf5_dataset(files[path], channel)
             selection, selected_shape = normalize_hdf5_selection(dataset, channel)
 
             opened_channels[channel_index] = HDF5ChannelState(
