@@ -75,7 +75,7 @@ class PlotStyle(BaseModel):
         if self.f_min >= self.f_max:
             raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
         return self
-    
+
 
 @dataclass(frozen=True)
 class SpectrumFigure:
@@ -528,13 +528,23 @@ def _create_order_3_or_4_figure(result: SpectrumResult, plot_style: PlotStyle) -
         else:
             norm = mcolors.AsinhNorm(linear_width=width, vmin=-limit, vmax=limit)
 
-        mesh = ax.pcolormesh(x, y, z, cmap=cmap, norm=norm, shading="auto")
+        # Results use spectrum[i, j] = S^(3/4)(w1[i], w2[j]).
+        # pcolormesh maps array dimension 0 to the vertical axis and dimension 1 to the
+        # horizontal axis, so transpose to display w1 horizontally and w2 vertically.
+        mesh = ax.pcolormesh(x, y, z.transpose(), cmap=cmap, norm=norm, shading="auto")
 
         if result.spectrum_error is not None:
             err = np.abs(_component_data(result.spectrum_error, component))
             insignificant = np.abs(raw_z) < plot_style.sigma * err
+            # explanation for transpose, see above.
             ax.pcolormesh(
-                x, y, insignificant.astype(float), cmap=error_cmap, vmin=0, vmax=1, shading="auto"
+                x,
+                y,
+                insignificant.astype(float).transpose(),
+                cmap=error_cmap,
+                vmin=0,
+                vmax=1,
+                shading="auto",
             )
 
         component_name = _component_label(component)

@@ -79,7 +79,7 @@ def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Te
     s3 = (
         m**2
         / ((m - 1) * (m - 2))
-        * torch.mean(centered_x[:, None, :] * centered_y[:, :, None] * centered_z, dim=0)
+        * torch.mean(centered_x[:, :, None] * centered_y[:, None, :] * centered_z, dim=0)
     )
     return s3
 

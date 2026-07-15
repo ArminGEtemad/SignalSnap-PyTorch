@@ -22,6 +22,8 @@ class SpectrumResult:
     Stores the configuration metadata, and final computed results for a specific higher-order auto-
     or cross-spectrum calculation.
 
+    Example: S^3(w1_i, w2_j) would be stored in ``SpectrumResult.spectrum[i, j]``.
+
     Attributes
     ----------
     channels : tuple[int, ...]

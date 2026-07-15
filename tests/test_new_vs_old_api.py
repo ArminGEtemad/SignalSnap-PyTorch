@@ -142,14 +142,19 @@ def test_new_api_matches_legacy_spectra(name, reference_file, channels, prepared
         }[order]
         assert result.spectrum.shape == expected_shape
 
+        spectrum_result = np.asarray(result.spectrum)
+        if order == 3:
+            spectrum_result = spectrum_result.transpose()
+
         actual_spectrum, expected_spectrum = align_legacy_spectrum_region(
-            np.asarray(result.spectrum),
+            spectrum_result,
             expected_freq,
             np.asarray(legacy_spectra[legacy_key][order]),
             np.asarray(legacy_freqs[legacy_key][order]),
             order,
         )
         assert actual_spectrum.shape == expected_spectrum.shape
+
         np.testing.assert_allclose(
             actual_spectrum,
             expected_spectrum,
@@ -174,8 +179,12 @@ def test_new_api_errors_match_legacy(name, reference_file, channels, prepared_da
         expected_freq = _expected_current_freq(name, legacy_key, order, legacy_freqs)
         np.testing.assert_allclose(result.freq, expected_freq, rtol=0.0, atol=1e-12)
 
+        spectrum_error = np.asarray(result.spectrum_error)
+        if order == 3:
+            spectrum_error = spectrum_error.transpose()
+
         actual_error, expected_error = align_legacy_spectrum_region(
-            np.asarray(result.spectrum_error),
+            spectrum_error,
             expected_freq,
             np.asarray(legacy_errors[legacy_key][order]),
             np.asarray(legacy_freqs[legacy_key][order]),

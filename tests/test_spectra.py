@@ -80,6 +80,6 @@ def test_calculate_spectra_reports_progress(
     assert progress_call == {
         "total": expected_total,
         "desc": "Calculating spectra",
-        "unit": "estimate",
+        "unit": " estimates",
         "disable": not show_progress,
     }
