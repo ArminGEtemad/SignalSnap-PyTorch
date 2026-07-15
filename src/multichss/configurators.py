@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ._core.utils import TimeUnits
+from ._core.utils import TimeUnits as _TimeUnits
 
 os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 _SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -51,7 +51,7 @@ class DataConfig(BaseModel):
 
     channels: Annotated[tuple[Any, ...], Field(min_length=1)]
     dt: Annotated[float, Field(gt=0)]
-    t_unit: TimeUnits = "s"
+    t_unit: _TimeUnits = "s"
 
     @field_validator("channels")
     @classmethod

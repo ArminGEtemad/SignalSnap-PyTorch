@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ._core.utils import FrequencyUnits
+from ._core.utils import FrequencyUnits as _FrequencyUnits
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +46,7 @@ class SpectrumResult:
     channels: tuple[int, ...]
 
     freq: np.ndarray
-    freq_unit: FrequencyUnits
+    freq_unit: _FrequencyUnits
     spectrum: np.ndarray
     spectrum_error: np.ndarray | None = None
 

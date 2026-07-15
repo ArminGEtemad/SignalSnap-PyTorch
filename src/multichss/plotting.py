@@ -20,8 +20,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ._core.data_access import get_sample_count, open_channels, read_channel
-from ._core.planning import normalize_channel_index, resolve_frequencies
+from ._core import data_access as _data_access
+from ._core import planning as _planning
 from ._core.utils import PlotComponent as _PlotComponent
 from .configurators import _SHARED_CONFIG, DataConfig, SpectrumConfig
 from .results import SpectrumResult, SpectrumResultStore
@@ -285,7 +285,7 @@ def create_first_window_figure(
     normalized_channels: list[int] = []
 
     for channel in selected_channels:
-        normalized = normalize_channel_index(channel, len(data_config.channels))
+        normalized = _planning.normalize_channel_index(channel, len(data_config.channels))
 
         if normalized in normalized_channels:
             raise ValueError(f"Channel {normalized} was selected more than once.")
@@ -293,11 +293,11 @@ def create_first_window_figure(
         normalized_channels.append(normalized)
 
     # Plot first window
-    window_points, _, _, _ = resolve_frequencies(spectrum_config=spectrum_config, dt=data_config.dt)
+    window_points, _, _, _ = _planning.resolve_frequencies(spectrum_config=spectrum_config, dt=data_config.dt)
 
-    with open_channels(data_config, normalized_channels) as opened_channels:
+    with _data_access.open_channels(data_config, normalized_channels) as opened_channels:
         for channel in normalized_channels:
-            available_points = get_sample_count(opened_channels[channel])
+            available_points = _data_access.get_sample_count(opened_channels[channel])
 
             if available_points < window_points:
                 raise ValueError(
@@ -317,7 +317,7 @@ def create_first_window_figure(
 
         for row, channel in enumerate(normalized_channels):
             axis = axes[row, 0]
-            first_window = read_channel(opened_channels[channel], start=0, stop=window_points)
+            first_window = _data_access.read_channel(opened_channels[channel], start=0, stop=window_points)
 
             axis.plot(time, first_window)
             axis.set_title(f"First window for channel {channel}")
