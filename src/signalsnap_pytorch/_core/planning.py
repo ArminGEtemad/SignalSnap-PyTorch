@@ -249,7 +249,7 @@ def build_runtime_config(
     ----------
     data_config : :class:`DataConfig`
         Data configurations containing the input data and sampling metadata.
-    opened_channels : tuple[Any | :class:`~multichss._core.data_access.HDF5ChannelState`]
+    opened_channels : tuple[Any | :class:`~signalsnap_pytorch._core.data_access.HDF5ChannelState`]
         Opened runtime representation of ``data_config.channels``. Array channels are retained
         directly; HDF5 channels are represented by HDF5ChannelState instances.
     spectrum_config : :class:`SpectrumConfig`

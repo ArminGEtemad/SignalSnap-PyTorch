@@ -3,12 +3,17 @@ requires = ["setuptools>=61.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "multichss"
-version = "0.1.0"
+name = "signalsnap-pytorch"
+version = "2.0.0"
 description = "SignalSnap (PyTorch): Signal Analysis In Python Made Easy"
 readme = "README.md"
 authors = [
-    { name = "Armin Ghorbanietemad", email = "armin.ghorbanietemad@rub.de" }
+    { name = "Armin Ghorbanietemad", email = "armin.ghorbanietemad@rub.de"},
+    { name = "Markus Sifft", email = "markus.sifft@rub.de"},
+    { name = "Daniel Hägele"},
+]
+maintainers = [
+    { name = "David Ratayczak", email = "david.ratayczak@edu.rub.de" },
 ]
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
@@ -34,7 +39,7 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ArminGEtemad/SignalSnap-PyTorch"
+Homepage = "https://github.com/Ratayczak/SignalSnap-PyTorch"
 
 [tool.setuptools]
 # This tells setuptools to look for code inside the 'src' directory

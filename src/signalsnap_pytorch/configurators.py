@@ -24,7 +24,7 @@ class DataConfig(BaseModel):
     """Configuration for data used in polyspectra calculations.
 
     These settings are later resolved together with :class:`SpectrumConfig` into the internal
-    runtime configuration used by :func:`~multichss.calculate_spectra`.
+    runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
     Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
     used to determine the number of data points (``window_points``) used for each Fourier
@@ -169,7 +169,7 @@ class SpectrumConfig(BaseModel):
     :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency bounds,
     number of frequency points, window count per spectral estimate, backend torch device, and
     compatibility options. These settings are later resolved together with :class:`DataConfig` into
-    the internal runtime configuration used by :func:`~multichss.calculate_spectra`.
+    the internal runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
     ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the REQUESTED frequency
     spacing:

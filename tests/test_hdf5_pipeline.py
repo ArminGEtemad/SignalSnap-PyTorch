@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 
-from multichss import DataConfig, HDF5Channel, SpectrumConfig, calculate_spectra
+from signalsnap_pytorch import DataConfig, HDF5Channel, SpectrumConfig, calculate_spectra
 
 
 REQUESTED_SPECTRA = [
@@ -50,13 +50,13 @@ def test_hdf5_and_mixed_channels_match_eager_array_pipeline(tmp_path):
     with h5py.File(path, "w") as file:
         file.create_dataset("/signals", data=stored, chunks=(2, 64, 1))
 
-    eager_channels = [
+    eager_channels = (
         stored[1:9, :, 0].reshape(-1),
         stored[1:9, :, 1].reshape(-1),
-    ]
+    )
     eager_config = DataConfig(channels=eager_channels, dt=0.1, t_unit="s")
     hdf5_config = DataConfig(
-        channels=[
+        channels=(
             HDF5Channel(
                 file=path,
                 dataset="/signals",
@@ -67,12 +67,12 @@ def test_hdf5_and_mixed_channels_match_eager_array_pipeline(tmp_path):
                 dataset="/signals",
                 selection=(slice(1, 9), slice(None), 1),
             ),
-        ],
+        ),
         dt=0.1,
         t_unit="s",
     )
     mixed_config = DataConfig(
-        channels=[hdf5_config.channels[0], eager_channels[1]],
+        channels=(hdf5_config.channels[0], eager_channels[1],),
         dt=0.1,
         t_unit="s",
     )
@@ -102,14 +102,14 @@ def test_hdf5_and_mixed_channels_match_eager_array_pipeline(tmp_path):
 
 def test_pipeline_does_not_open_unrequested_hdf5_channel(tmp_path):
     data_config = DataConfig(
-        channels=[
+        channels=(
             np.arange(128, dtype=float),
             HDF5Channel(
                 file=tmp_path / "missing.h5",
                 dataset="/signals",
                 selection=(slice(None),),
             ),
-        ],
+        ),
         dt=1.0,
     )
     spectrum_config = SpectrumConfig(

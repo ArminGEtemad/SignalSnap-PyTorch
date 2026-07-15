@@ -1,6 +1,6 @@
 """Deprecated legacy implementation kept for reference.
 
-New code should use ``multichss.calculate_spectra`` instead.
+New code should use ``signalsnap_pytorch.calculate_spectra`` instead.
 """
 
 # This file is part of SignalSnap (PyTorch): Signal Analysis In Python Made Easy
@@ -23,7 +23,7 @@ from tabulate import tabulate
 from torch import Tensor
 from typing import Dict, Optional, Tuple
 
-from multichss.configurators import CrossConfig, SpectrumConfig, DataConfig
+from signalsnap_pytorch.configurators import CrossConfig, SpectrumConfig, DataConfig
 
 def load_spec(path):
     f = open(path, mode='rb')

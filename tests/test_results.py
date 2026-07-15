@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from multichss import SpectrumResult
+from signalsnap_pytorch import SpectrumResult
 
 
 @pytest.mark.parametrize(

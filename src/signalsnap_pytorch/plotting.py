@@ -33,7 +33,7 @@ except ModuleNotFoundError as exc:
 
     raise ModuleNotFoundError(
         "Plotting support requires the optional dependency 'matplotlib'. "
-        'Install it with: pip install "multichss[plotting]"'
+        'Install it with: pip install "signalsnap-pytorch[plotting]"'
     ) from None
 
 
@@ -221,7 +221,7 @@ def _custom_colormap() -> LinearSegmentedColormap:
         / 255.0
     )
 
-    return mcolors.LinearSegmentedColormap.from_list("multichss_spectrum", colors)
+    return mcolors.LinearSegmentedColormap.from_list("signalsnap_pytorch_spectrum", colors)
 
 
 def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColormap:
@@ -239,7 +239,7 @@ def _custom_error_colormap(insignificance_alpha: float) -> LinearSegmentedColorm
     """
 
     return LinearSegmentedColormap.from_list(
-        "multichss_insignificant",
+        "signalsnap_pytorch_insignificant",
         [
             (0.0, 0.0, 0.0, 0.0),
             (1.0, 1.0, 1.0, insignificance_alpha),

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from multichss import DataConfig, HDF5Channel, SpectrumConfig
+from signalsnap_pytorch import DataConfig, HDF5Channel, SpectrumConfig
 
 
 def test_spectrum_config_accepts_negative_frequency_band():
@@ -17,7 +17,7 @@ def test_spectrum_config_defaults_to_no_interlacing():
 
 def test_data_config_accepts_array_channels():
     config = DataConfig(
-        channels=[np.arange(10), np.arange(10) * 2],
+        channels=(np.arange(10), np.arange(10) * 2),
         dt=0.1,
     )
 
@@ -35,7 +35,7 @@ def test_data_config_accepts_array_and_hdf5_channels():
     )
 
     config = DataConfig(
-        channels=[np.arange(10), hdf5_channel],
+        channels=(np.arange(10), hdf5_channel),
         dt=0.1,
     )
 

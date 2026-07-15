@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from multichss._core.accumulation import (
+from signalsnap_pytorch._core.accumulation import (
     SpectrumAccumulator,
     accumulate_spectrum,
     finalize_result,

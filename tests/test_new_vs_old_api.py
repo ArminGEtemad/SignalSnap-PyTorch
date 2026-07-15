@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 import pytest
 
-from multichss import DataConfig, SpectrumConfig, calculate_spectra
+from signalsnap_pytorch import DataConfig, SpectrumConfig, calculate_spectra
 from tests._helpers import align_legacy_spectrum_region
 
 AUTO_CHANNELS = [

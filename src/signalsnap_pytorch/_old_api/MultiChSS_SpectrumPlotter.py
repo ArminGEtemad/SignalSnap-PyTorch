@@ -7,8 +7,8 @@
 # For details, see the LICENSE file in the root of this repository or
 # https://opensource.org/licenses/BSD-3-Clause
 
-from multichss._old_api.MultiChSS_SpectrumCalculator import SpectrumCalculator
-from multichss.configurators import CrossConfig, PlotConfig, SpectrumConfig
+from signalsnap_pytorch._old_api.MultiChSS_SpectrumCalculator import SpectrumCalculator
+from signalsnap_pytorch.configurators import CrossConfig, PlotConfig, SpectrumConfig
  
 import pandas as pd
 import numpy as np

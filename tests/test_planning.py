@@ -3,9 +3,9 @@ from contextlib import nullcontext
 import numpy as np
 import pytest
 
-from multichss import DataConfig, SpectrumConfig, calculate_spectra
-from multichss._core.data_access import open_channels
-from multichss._core.planning import (
+from signalsnap_pytorch import DataConfig, SpectrumConfig, calculate_spectra
+from signalsnap_pytorch._core.data_access import open_channels
+from signalsnap_pytorch._core.planning import (
     build_runtime_config,
     iter_window_slices,
     resolve_channels,
@@ -77,7 +77,7 @@ def test_spectral_estimates_in_runtime_config(
         m=m,
         spectral_estimates_max=spectral_estimates_max,
     )
-    data_config = DataConfig(channels=[np.ones(n_data_points)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(n_data_points),), dt=1.0)
 
     warning_context = (
         pytest.warns(UserWarning, match=f"using m={expected_m} instead")
@@ -162,7 +162,7 @@ def test_window_slices_respect_interlacing(
         spectral_estimates_max=None,
         interlacing=interlacing,
     )
-    data_config = DataConfig(channels=[np.ones(n_data_points)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(n_data_points),), dt=1.0)
 
     runtime = _build_runtime(data_config, spectrum_config, auto_spectra)
 
@@ -179,7 +179,7 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
         m=4,
         spectral_estimates_max=1,
     )
-    data_config = DataConfig(channels=[np.ones(64)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(64),), dt=1.0)
 
     with pytest.warns(RuntimeWarning, match="at least two spectral estimates"):
         result_store = calculate_spectra(
@@ -216,7 +216,7 @@ def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
         interlacing=False,
         spectral_estimates_max=None,
     )
-    data_config = DataConfig(channels=[np.ones(64)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(64),), dt=1.0)
 
     runtime = _build_runtime(data_config, spectrum_config, auto_spectra)
 
@@ -233,7 +233,7 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
         interlacing=True,
         spectral_estimates_max=None,
     )
-    data_config = DataConfig(channels=[np.ones(64)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(64),), dt=1.0)
 
     with pytest.raises(ValueError, match="Interlacing was requested"):
         _build_runtime(data_config, spectrum_config, auto_spectra)
@@ -254,7 +254,7 @@ def test_runtime_config_rejects_m_below_requested_order(auto_spectra_channels, m
         frequency_points=16,
         m=m,
     )
-    data_config = DataConfig(channels=[np.ones(50000)], dt=0.001)
+    data_config = DataConfig(channels=(np.ones(50000),), dt=0.001)
 
     with pytest.raises(ValueError, match="Not enough data points"):
         _build_runtime(data_config, spectrum_config, auto_spectra_channels)
@@ -268,7 +268,7 @@ def test_runtime_config_defaults_to_all_auto_spectra_for_all_channels():
         m=4,
     )
     data_config = DataConfig(
-        channels=[np.ones(136), np.ones(136)],
+        channels=(np.ones(136), np.ones(136),),
         dt=1.0,
     )
 
@@ -294,7 +294,7 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
         frequency_points=9,
         m=4,
     )
-    data_config = DataConfig(channels=[np.ones(136)], dt=1.0)
+    data_config = DataConfig(channels=(np.ones(136),), dt=1.0)
 
     with pytest.raises(ValueError, match="out of bounds"):
         _build_runtime(data_config, spectrum_config, [(1,)])

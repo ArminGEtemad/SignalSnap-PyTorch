@@ -7,8 +7,8 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from multichss import DataConfig, HDF5Channel, SpectrumConfig
-from multichss.plotting import create_first_window_figure
+from signalsnap_pytorch import DataConfig, HDF5Channel, SpectrumConfig
+from signalsnap_pytorch.plotting import create_first_window_figure
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def test_create_first_window_figure_plots_all_array_channels(
     channel_0 = np.arange(12, dtype=float)
     channel_1 = np.arange(12, dtype=float) + 100
     data_config = DataConfig(
-        channels=[channel_0, channel_1],
+        channels=(channel_0, channel_1),
         dt=1.0,
         t_unit="ms",
     )
@@ -57,11 +57,11 @@ def test_create_first_window_figure_plots_all_array_channels(
 def test_create_first_window_figure_respects_selected_channel_order(
     first_window_spectrum_config,
 ):
-    channels = [
+    channels = (
         np.arange(12, dtype=float),
         np.arange(12, dtype=float) + 100,
         np.arange(12, dtype=float) + 200,
-    ]
+    )
     data_config = DataConfig(channels=channels, dt=1.0)
 
     figure = create_first_window_figure(
@@ -92,14 +92,14 @@ def test_create_first_window_figure_supports_mixed_array_and_hdf5_channels(
 
     array_channel = np.arange(20, dtype=float) + 1000
     data_config = DataConfig(
-        channels=[
+        channels=(
             array_channel,
             HDF5Channel(
                 file=path,
                 dataset="/signals",
                 selection=(slice(1, 3), slice(1, 10), 1),
             ),
-        ],
+        ),
         dt=1.0,
     )
     expected_hdf5 = stored[1:3, 1:10, 1].reshape(-1)
@@ -144,7 +144,7 @@ def test_create_first_window_figure_rejects_invalid_channel_selection(
     message,
 ):
     data_config = DataConfig(
-        channels=[np.arange(12), np.arange(12)],
+        channels=(np.arange(12), np.arange(12)),
         dt=1.0,
     )
 
@@ -159,7 +159,7 @@ def test_create_first_window_figure_rejects_invalid_channel_selection(
 def test_create_first_window_figure_rejects_short_array_channel(
     first_window_spectrum_config,
 ):
-    data_config = DataConfig(channels=[np.arange(7)], dt=1.0)
+    data_config = DataConfig(channels=(np.arange(7),), dt=1.0)
 
     with pytest.raises(
         ValueError,
@@ -178,13 +178,13 @@ def test_create_first_window_figure_rejects_short_hdf5_channel(
         file.create_dataset("/signals", data=np.arange(7))
 
     data_config = DataConfig(
-        channels=[
+        channels=(
             HDF5Channel(
                 file=path,
                 dataset="/signals",
                 selection=(slice(None),),
-            )
-        ],
+            ),
+        ),
         dt=1.0,
     )
 
@@ -201,14 +201,14 @@ def test_create_first_window_figure_does_not_open_unselected_hdf5_channel(
 ):
     array_channel = np.arange(12, dtype=float)
     data_config = DataConfig(
-        channels=[
+        channels=(
             array_channel,
             HDF5Channel(
                 file=tmp_path / "missing.h5",
                 dataset="/signals",
                 selection=(slice(None),),
             ),
-        ],
+        ),
         dt=1.0,
     )
 

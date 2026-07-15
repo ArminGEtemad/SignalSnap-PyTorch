@@ -19,8 +19,8 @@ def test_array_only_usage_does_not_import_h5py():
 
         builtins.__import__ = import_without_h5py
 
-        from multichss import DataConfig
-        from multichss._core.data_access import open_channels
+        from signalsnap_pytorch import DataConfig
+        from signalsnap_pytorch._core.data_access import open_channels
 
         config = DataConfig(channels=[np.arange(8)], dt=1.0)
 
@@ -49,8 +49,8 @@ def test_core_usage_does_not_import_matplotlib():
 
         builtins.__import__ = import_without_matplotlib
 
-        from multichss import DataConfig
-        from multichss._core.data_access import open_channels
+        from signalsnap_pytorch import DataConfig
+        from signalsnap_pytorch._core.data_access import open_channels
 
         config = DataConfig(channels=[np.arange(8)], dt=1.0)
 
@@ -58,11 +58,13 @@ def test_core_usage_does_not_import_matplotlib():
             np.testing.assert_array_equal(channels[0], np.arange(8))
 
         try:
-            importlib.import_module("multichss.plotting")
+            importlib.import_module("signalsnap_pytorch.plotting")
         except ModuleNotFoundError as exc:
-            assert 'pip install "multichss[plotting]"' in str(exc)
+            assert 'pip install "signalsnap-pytorch[plotting]"' in str(exc)
         else:
-            raise AssertionError("Importing multichss.plotting should require matplotlib")
+            raise AssertionError(
+                "Importing signalsnap_pytorch.plotting should require matplotlib"
+            )
         """
     )
 

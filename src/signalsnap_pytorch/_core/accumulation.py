@@ -32,7 +32,8 @@ class SpectrumAccumulator:
 
     Attributes
     ----------
-    channels : tuple[int, ...]runtime configuration used by :func:`multichss.calculate_spectra`.
+    channels : tuple[int, ...]
+        Runtime configuration used by :func:`signalsnap_pytorch.calculate_spectra`.
         The indices identifying which channels are part of this calculation. For example,
         ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)`` indicates
         a cross-spectrum between channels 0 and 1.

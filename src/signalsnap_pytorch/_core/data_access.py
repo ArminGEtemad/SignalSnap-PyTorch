@@ -33,7 +33,7 @@ def _require_h5py() -> Any:
 
         raise ModuleNotFoundError(
             "HDF5 support requires the optional dependency 'h5py'. "
-            'Install it with: pip install "multichss[hdf5]"'
+            'Install it with: pip install "signalsnap-pytorch[hdf5]"'
         ) from None
 
     return h5py
