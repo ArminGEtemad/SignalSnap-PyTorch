@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -16,7 +15,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ._core.utils import TimeUnits as _TimeUnits
 
-os.environ["PYDANTIC_ERRORS_INCLUDE_URL"] = "0"
 _SHARED_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
