@@ -79,3 +79,39 @@ def test_hdf5_channel_rejects_invalid_configuration(dataset, selection, message)
             dataset=dataset,
             selection=selection,
         )
+
+@pytest.mark.parametrize(
+    ("device", "expected"),
+    [
+        ("cpu", "cpu"),
+        ("mps", "mps"),
+        ("cuda", "cuda"),
+        ("cuda:0", "cuda:0"),
+        ("cuda:1", "cuda:1"),
+    ],
+)
+def test_spectrum_config_accepts_supported_devices(device, expected):
+    config = SpectrumConfig(device=device)
+
+    assert config.device == expected
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "",
+        "CPU",
+        "cuda:",
+        "cuda:01"
+        "cuda:-1",
+        "cuda:abc",
+        "cudafoo",
+        "cpu:0",
+        "mps:0",
+        "xpu",
+        "meta",
+    ],
+)
+def test_spectrum_config_rejects_unsupported_devices(device):
+    with pytest.raises(ValidationError, match="device|device type|numbered"):
+        SpectrumConfig(device=device)

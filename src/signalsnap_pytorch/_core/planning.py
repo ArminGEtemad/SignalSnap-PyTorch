@@ -97,6 +97,60 @@ class RuntimeConfig:
     old_window: bool
 
 
+def _resolve_device(device_name: str) -> torch.device:
+    """Validate and resolve a requested PyTorch device.
+
+    Supported examples are ``"cpu"``, ``"cuda"``, ``"cuda:0"``,
+    ``"cuda:1"``, and ``"mps"``.
+    """
+    try:
+        device = torch.device(device_name)
+    except (RuntimeError, ValueError) as exc:
+        raise ValueError(f"Invalid PyTorch device {device_name!r}.") from exc
+
+    if device.type == "cpu":
+        return device
+
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested, but CUDA is not available. Check that PyTorch was installed "
+                "with CUDA support and that an NVIDIA GPU and compatible driver are available."
+            )
+
+        index = device.index
+        if index is None:
+            index = torch.cuda.current_device()
+
+        device_count = torch.cuda.device_count()
+        if index < 0 or index >= device_count:
+            raise RuntimeError(
+                f"CUDA device {index} was requested, but only {device_count} CUDA device(s) are "
+                "available."
+            )
+
+        # Return an explicit device such as cuda:0.
+        return torch.device("cuda", index)
+
+    if device.type == "mps":
+        if device.index is not None:
+            raise ValueError("MPS devices do not support numbered device indices.")
+
+        if not torch.backends.mps.is_built():
+            raise RuntimeError(
+                "MPS was requested, but this PyTorch installation was not built with MPS support."
+            )
+
+        if not torch.backends.mps.is_available():
+            raise RuntimeError("MPS was requested, but it is not available on this system.")
+
+        return torch.device("mps")
+
+    raise ValueError(
+        f"Unsupported device type {device.type!r}. Use 'cpu', 'cuda', 'cuda:N', or 'mps'."
+    )
+
+
 def normalize_channel_index(channel: object, channel_count: int) -> int:
     """Validate and normalize one data-channel index."""
 
@@ -285,6 +339,8 @@ def build_runtime_config(
     if m < max(orders):
         raise ValueError("Not enough data points")
 
+    device = _resolve_device(spectrum_config.device)
+
     # determine the data types based on the given precision
     if spectrum_config.precision == "single":
         real_dtype = torch.float32
@@ -293,7 +349,7 @@ def build_runtime_config(
         real_dtype = torch.float64
         complex_dtype = torch.complex128
     else:
-        if spectrum_config.device == "mps":
+        if device.type == "mps":
             real_dtype = torch.float32
             complex_dtype = torch.complex64
         else:
@@ -335,7 +391,7 @@ def build_runtime_config(
         freq_unit=unit_conversion_time_to_freq(t_unit),
         real_dtype=real_dtype,
         complex_dtype=complex_dtype,
-        device=torch.device(spectrum_config.device),
+        device=device,
         spectral_estimates=spectral_estimates,
         interlacing=spectrum_config.interlacing,
         old_window=spectrum_config.old_window,

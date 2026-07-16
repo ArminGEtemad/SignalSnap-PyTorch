@@ -2,6 +2,7 @@ from contextlib import nullcontext
 
 import numpy as np
 import pytest
+import torch
 
 from signalsnap_pytorch import DataConfig, SpectrumConfig, calculate_spectra
 from signalsnap_pytorch._core.data_access import open_channels
@@ -9,6 +10,7 @@ from signalsnap_pytorch._core.planning import (
     build_runtime_config,
     iter_window_slices,
     resolve_channels,
+    _resolve_device
 )
 
 auto_spectra = [(0,), (0, 0)]
@@ -186,6 +188,7 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
             data_config, spectrum_config, requested_spectra=[(0, 0, 0)]
         )
     result = result_store.get((0, 0, 0))
+    assert result is not None
 
     assert result.spectrum.shape == (result.freq.size, result.freq.size)
 
@@ -351,3 +354,37 @@ def test_resolve_channels_preserves_first_seen_active_data_channel_order():
 def test_resolve_channels_rejects_missing_data_channels():
     with pytest.raises(ValueError, match="At least one.*channel"):
         resolve_channels(None, channel_count=0)
+
+
+def test_resolve_device_accepts_cpu():
+    assert _resolve_device("cpu") == torch.device("cpu")
+
+
+def test_resolve_device_rejects_unavailable_cuda(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="CUDA is not available"):
+        _resolve_device("cuda")
+
+
+def test_resolve_device_accepts_existing_cuda_index(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+
+    assert _resolve_device("cuda:1") == torch.device("cuda:1")
+
+
+def test_resolve_device_rejects_missing_cuda_index(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+
+    with pytest.raises(RuntimeError, match="only 1 CUDA device"):
+        _resolve_device("cuda:1")
+
+
+def test_resolve_plain_cuda_to_current_device(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+
+    assert _resolve_device("cuda") == torch.device("cuda:1")

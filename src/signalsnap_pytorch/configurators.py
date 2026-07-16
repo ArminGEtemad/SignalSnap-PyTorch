@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import numpy as np
+import torch
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ._core.utils import TimeUnits as _TimeUnits
@@ -197,8 +198,9 @@ class SpectrumConfig(BaseModel):
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
-    device : Literal["cpu", "mps", "cuda"]  = "cpu"
-        Torch device requested for calculation.
+    device : str = "cpu"
+        Torch device requested for calculation. Can be ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or 
+        ``"mps"``.
     precision : Literal["auto", "single", "double"] = "auto"
         Floating point precision. ``single`` will result in ``float32`` and ``complex64``.
         ``double`` will result in ``float64`` and ``complex128``. ``auto`` will choose ``single`` if
@@ -226,7 +228,7 @@ class SpectrumConfig(BaseModel):
     f_max: float | None = None
     frequency_points: Annotated[int, Field(ge=2)] = 100
     m: Annotated[int, Field(gt=0)] = 10
-    device: Literal["cpu", "mps", "cuda"] = "cpu"
+    device: str = "cpu"
     precision: Literal["auto", "single", "double"] = "auto"
     spectral_estimates_max: Annotated[int, Field(gt=0)] | None = int(1e6)
     interlacing: bool = False
@@ -239,3 +241,27 @@ class SpectrumConfig(BaseModel):
                 raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
 
         return self
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        """Validate device syntax without checking hardware availability."""
+        try:
+            device = torch.device(value)
+        except (RuntimeError, ValueError) as exc:
+            raise ValueError(
+                "device must be 'cpu', 'mps', 'cuda', or 'cuda:N', where N is a nonnegative "
+                "integer."
+            ) from exc
+
+        if device.type not in {"cpu", "cuda", "mps"}:
+            raise ValueError(
+                f"Unsupported device type {device.type!r}; use 'cpu', 'mps', 'cuda', or 'cuda:N'."
+            )
+
+        if device.type in {"cpu", "mps"} and device.index is not None:
+            raise ValueError(
+                f"{device.type!r} does not support a numbered device index."
+            )
+
+        return str(device)
