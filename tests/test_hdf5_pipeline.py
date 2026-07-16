@@ -15,8 +15,8 @@ REQUESTED_SPECTRA = [
 
 def _assert_result_stores_equal(actual_store, expected_store):
     for channels in REQUESTED_SPECTRA:
-        actual = actual_store.get(channels)
-        expected = expected_store.get(channels)
+        actual = actual_store[channels]
+        expected = expected_store[channels]
 
         np.testing.assert_array_equal(actual.freq, expected.freq)
         assert actual.freq_unit == expected.freq_unit
