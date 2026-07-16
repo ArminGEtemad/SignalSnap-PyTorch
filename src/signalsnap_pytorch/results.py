@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -80,7 +80,6 @@ class SpectrumResult:
             raise ValueError("Spectrum error must have the same shape as the spectrum.")
 
 
-
 @dataclass(slots=True)
 class SpectrumResultStore:
     """Container for all spectrum results produced by a calculation pipeline.
@@ -101,18 +100,46 @@ class SpectrumResultStore:
 
     results: dict[tuple[int, ...], SpectrumResult] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        for channels, result in self.results.items():
+            if not isinstance(result, SpectrumResult):
+                raise TypeError(
+                    "SpectrumResultStore values must be SpectrumResult objects; "
+                    f"received {type(result).__name__} for key {channels}."
+                )
+
+            if channels != result.channels:
+                raise ValueError(
+                    f"Result key {channels} does not match "
+                    f"SpectrumResult.channels {result.channels}."
+                )
+
+    def __contains__(self, channels: object) -> bool:
+        """Return whether a result exists for a channel tuple."""
+        return channels in self.results
+
     def __iter__(self) -> Iterator[SpectrumResult]:
         return iter(self.results.values())
 
-    def get(self, channels: tuple[int, ...]) -> SpectrumResult:
-        """Return the result for a channel tuple."""
+    def __len__(self) -> int:
+        """Return the number of stored results."""
+        return len(self.results)
+
+    def __getitem__(self, channels: tuple[int, ...]) -> SpectrumResult:
+        """Return a result for a channel tuple."""
         return self.results[channels]
 
     def add(self, result: SpectrumResult) -> None:
         """Add or replace a spectrum result using its channels."""
+        if not isinstance(result, SpectrumResult):
+            raise TypeError(
+                "SpectrumResultStore only accepts SpectrumResult objects; "
+                f"received {type(result).__name__}."
+            )
+
         self.results[result.channels] = result
 
-    def select(self, channels: list[tuple[int, ...]]) -> SpectrumResultStore:
+    def select(self, channels: Iterable[tuple[int, ...]]) -> SpectrumResultStore:
         """Return a new store containing the selected results.
 
         The new store shares its SpectrumResult objects with this store.
@@ -128,3 +155,34 @@ class SpectrumResultStore:
                 ) from exc
 
         return SpectrumResultStore(results=selected)
+
+    def select_by_order(self, order: int) -> SpectrumResultStore:
+        """Return all results with the specified spectrum order.
+
+        An empty store is returned when no matching results exist.
+        """
+        if isinstance(order, (bool, np.bool_)) or not isinstance(order, (int, np.integer)):
+            raise TypeError("order must be an integer.")
+
+        order = int(order)
+
+        if not 1 <= order <= 4:
+            raise ValueError("order must be between 1 and 4.")
+
+        return self.select([result.channels for result in self if result.order == order])
+
+    def select_by_channel(self, channel: int) -> SpectrumResultStore:
+        """Return all results involving the specified data channel.
+
+        A result matches when ``channel`` occurs anywhere in its channel tuple.
+        An empty store is returned when no matching results exist.
+        """
+        if isinstance(channel, (bool, np.bool_)) or not isinstance(channel, (int, np.integer)):
+            raise TypeError("channel must be an integer.")
+
+        channel = int(channel)
+
+        if channel < 0:
+            raise ValueError("channel must be nonnegative.")
+
+        return self.select([result.channels for result in self if channel in result.channels])
