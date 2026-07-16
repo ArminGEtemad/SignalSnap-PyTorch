@@ -80,15 +80,13 @@ class SpectrumResult:
             raise ValueError("Spectrum error must have the same shape as the spectrum.")
 
 
+
 @dataclass(slots=True)
 class SpectrumResultStore:
     """Container for all spectrum results produced by a calculation pipeline.
 
     Stores one :class:`SpectrumResult` per channel tuple. Results are indexed by ``channels``, where
     ``channels`` is a tuple of data-channel indices.
-
-    Iterating over the store yields SpectrumResult objects. Use ``keys()``,  ``values()``, or
-    ``items()`` for explicit dictionary-style access.
 
     This class owns collection-level bookkeeping only. Numerical accumulation, error estimation, and
     finalization are handled elsewhere.
@@ -106,37 +104,9 @@ class SpectrumResultStore:
     def __iter__(self) -> Iterator[SpectrumResult]:
         return iter(self.results.values())
 
-    def __len__(self) -> int:
-        """Return the number of available results."""
-        return len(self.results)
-
-    def __contains__(self, channels: object) -> bool:
-        """Return whether a channel tuple has a result."""
-        return channels in self.results
-
-    def __getitem__(self, channels: tuple[int, ...]) -> SpectrumResult:
-        """Return a result, raising KeyError when it does not exist."""
-        return self.results[channels]
-
-    def get(
-        self,
-        channels: tuple[int, ...],
-        default: SpectrumResult | None = None,
-    ) -> SpectrumResult | None:
+    def get(self, channels: tuple[int, ...]) -> SpectrumResult:
         """Return the result for a channel tuple."""
-        return self.results.get(channels, default)
-
-    def keys(self):
-        """Return the available channel tuples."""
-        return self.results.keys()
-
-    def values(self):
-        """Return the available results."""
-        return self.results.values()
-
-    def items(self):
-        """Return channel-tuple/result pairs."""
-        return self.results.items()
+        return self.results[channels]
 
     def add(self, result: SpectrumResult) -> None:
         """Add or replace a spectrum result using its channels."""
