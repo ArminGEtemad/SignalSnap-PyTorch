@@ -187,7 +187,7 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
         result_store = calculate_spectra(
             data_config, spectrum_config, requested_spectra=[(0, 0, 0)]
         )
-    result = result_store.get((0, 0, 0))
+    result = result_store[(0, 0, 0)]
     assert result is not None
 
     assert result.spectrum.shape == (result.freq.size, result.freq.size)

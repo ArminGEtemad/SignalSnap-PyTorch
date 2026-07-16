@@ -23,7 +23,7 @@ def test_c1_returns_correct_mean():
 
     result = calculate_spectra(
         data_config, spectrum_config, requested_spectra=[(0,)]
-    ).get((0,))
+    )[(0,)]
 
     np.testing.assert_allclose(result.spectrum, np.asarray([2.0 + 0.0j]), atol=1e-12)
 
@@ -40,7 +40,7 @@ def test_c1_returns_mean_when_selected_band_excludes_dc():
 
     result = calculate_spectra(
         data_config, spectrum_config, requested_spectra=[(0,)]
-    ).get((0,))
+    )[(0,)]
 
     np.testing.assert_allclose(result.spectrum, np.asarray([2.0 + 0.0j]), atol=1e-12)
     np.testing.assert_array_equal(result.freq, np.asarray([0.0]))

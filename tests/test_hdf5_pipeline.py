@@ -125,4 +125,4 @@ def test_pipeline_does_not_open_unrequested_hdf5_channel(tmp_path):
         requested_spectra=[(0, 0)],
     )
 
-    assert result_store.get((0, 0)).channels == (0, 0)
+    assert result_store[(0, 0)].channels == (0, 0)

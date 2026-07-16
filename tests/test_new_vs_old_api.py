@@ -130,7 +130,7 @@ def test_new_api_matches_legacy_spectra(name, reference_file, channels, prepared
     for channel_tuple in channels:
         order = len(channel_tuple)
         legacy_key = _legacy_channel_key(name, channel_tuple)
-        result = result_store.get(channel_tuple)
+        result = result_store[channel_tuple]
         expected_freq = _expected_current_freq(name, legacy_key, order, legacy_freqs)
         np.testing.assert_allclose(result.freq, expected_freq, rtol=0.0, atol=1e-12)
 
@@ -174,7 +174,7 @@ def test_new_api_errors_match_legacy(name, reference_file, channels, prepared_da
     for channel_tuple in channels:
         order = len(channel_tuple)
         legacy_key = _legacy_channel_key(name, channel_tuple)
-        result = result_store.get(channel_tuple)
+        result = result_store[channel_tuple]
         assert result.spectrum_error is not None
         expected_freq = _expected_current_freq(name, legacy_key, order, legacy_freqs)
         np.testing.assert_allclose(result.freq, expected_freq, rtol=0.0, atol=1e-12)
