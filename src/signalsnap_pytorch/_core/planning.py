@@ -306,6 +306,12 @@ def resolve_frequencies(
     band_start_idx = int(np.sum(freq_all < spectrum_config.f_min))
     band_end_idx = int(np.sum(freq_all <= f_max))
 
+    if band_start_idx >= band_end_idx:
+        raise ValueError(
+            f"The requested frequency band [{spectrum_config.f_min}, {f_max}] does not contain "
+            "any FFT frequencies at the resolved frequency spacing."
+        )
+
     return window_points, freq_all, band_start_idx, band_end_idx
 
 

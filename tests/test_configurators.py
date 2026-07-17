@@ -15,6 +15,20 @@ def test_spectrum_config_defaults_to_no_interlacing():
     assert SpectrumConfig().interlacing is False
 
 
+def test_spectrum_config_defaults_to_automatic_frequency_spacing():
+    assert SpectrumConfig().df is None
+
+
+def test_spectrum_config_accepts_positive_frequency_spacing():
+    assert SpectrumConfig(df=0.125).df == 0.125
+
+
+@pytest.mark.parametrize("df", [0.0, -0.125, np.inf, np.nan])
+def test_spectrum_config_rejects_invalid_frequency_spacing(df):
+    with pytest.raises(ValidationError, match="df"):
+        SpectrumConfig(df=df)
+
+
 def test_data_config_accepts_array_channels():
     config = DataConfig(
         channels=(np.arange(10), np.arange(10) * 2),

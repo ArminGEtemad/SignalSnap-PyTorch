@@ -10,6 +10,7 @@ from signalsnap_pytorch._core.planning import (
     build_runtime_config,
     iter_window_slices,
     resolve_channels,
+    resolve_frequencies,
     _resolve_device,
 )
 
@@ -208,6 +209,17 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
 
     np.testing.assert_array_equal(np.isnan(result.spectrum), ~expected_valid_mask)
     assert np.isfinite(result.spectrum[expected_valid_mask]).all()
+
+
+def test_resolve_frequencies_rejects_band_without_fft_frequency():
+    spectrum_config = SpectrumConfig(
+        f_min=0.1,
+        f_max=0.2,
+        df=0.5,
+    )
+
+    with pytest.raises(ValueError, match="does not contain any FFT frequencies"):
+        resolve_frequencies(spectrum_config, dt=1.0)
 
 
 def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
