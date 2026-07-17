@@ -165,46 +165,40 @@ class HDF5Channel(BaseModel):
 class SpectrumConfig(BaseModel):
     """Spectrum configuration for polyspectra calculations.
 
-    :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency bounds,
-    number of frequency points, window count per spectral estimate, backend torch device, and
-    compatibility options. These settings are later resolved together with :class:`DataConfig` into
-    the internal runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
+    :class:`SpectrumConfig` describes what the user asks the calculation to use: frquency spacing
+    and bounds, window count per spectral estimate, backend torch device, and compatibility options.
+    These settings are later resolved together with :class:`DataConfig` into the internal runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
-    ``f_min``, ``f_max``, and ``frequency_points`` will be used to determine the REQUESTED frequency
-    spacing:
+    `df` is the REQUESTED frequency spacing. Note, that the discrete Fourier transform cannot result
+    in arbitrary frequency spacings with a given sample spacing `dt` from :class:`DataConfig`. They
+    are related via:
 
-        df* = (f_max - f_min) / (frequency_points - 1)
-
-    (!) The discrete Fourier transform cannot result in arbitrary frequency spacings with a given
-    sample spacing. The library will use the closest available frequency spacing.
-
-    (!) The discrete Fourier transform always includes the frequency ``f=0`` and all frequency
-    points in the range between ``f_min`` and ``f_max`` are integer multiples of the actual df.
-
-    Together with ``dt`` from :class:`DataConfig`, ``df`` will be used to determine the number of
-    data points (``window_points``) used for each Fourier transform:
-
-        window_points = 1 / (dt * df)
+        window_points = 1 / (dt * df),
+    
+    where `window_points` is the number of samples used for each DFT. The calculation will use the
+    closest available frequency spacing. Check the frequency axis of the
+    :class:`~signalsnap_pytorch.results.SpectrumResult` to see the true frequencies.
 
     Attributes
     ----------
+    df : float | None
+        Frequency spacing in the specified frequency range. Must be positive. If omitted,
+        `window_points` will be set to 1000.
     f_min : float = 0.0
         Lower frequency bound. If omitted, zero is used.
     f_max : float | None = None
         Upper frequency bound. If omitted, the Nyquist frequency based on :class:`DataConfig`'s
         ``dt`` is used.
-    frequency_points : int = 100
-        Number of frequency points in the specified frequency range. Must be positive.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be positive.
     device : str = "cpu"
-        Torch device requested for calculation. Can be ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or 
-        ``"mps"``.
+        Torch device requested for calculation. Can be ``"cpu"``, ``"cuda"``, ``"cuda:N"``,
+        ``"mps"``, ``"xpu"``, or ``"xpu:N"``.
     precision : Literal["auto", "single", "double"] = "auto"
         Floating point precision. ``single`` will result in ``float32`` and ``complex64``.
         ``double`` will result in ``float64`` and ``complex128``. ``auto`` will choose ``single`` if
-        device is ``mps`` and ``double`` otherwise.
+        device is ``mps`` or ``xpu`` and ``double`` if device is ``cpu`` or ``cuda``.
     spectral_estimates_max : int | None = int(1e6)
         Maximum number of unshifted spectral estimates. If ``None``, as many estimates as possible
         are calculated based on the data. The true number of spectral estimates may be lower if the
@@ -224,9 +218,10 @@ class SpectrumConfig(BaseModel):
 
     model_config = _SHARED_CONFIG
 
+    df: Annotated[float, Field(gt=0)] | None = None
+
     f_min: float = 0.0
     f_max: float | None = None
-    frequency_points: Annotated[int, Field(ge=2)] = 100
     m: Annotated[int, Field(gt=0)] = 10
     device: str = "cpu"
     precision: Literal["auto", "single", "double"] = "auto"
@@ -250,13 +245,14 @@ class SpectrumConfig(BaseModel):
             device = torch.device(value)
         except (RuntimeError, ValueError) as exc:
             raise ValueError(
-                "device must be 'cpu', 'mps', 'cuda', or 'cuda:N', where N is a nonnegative "
-                "integer."
+                "device must be 'cpu', 'mps', 'cuda', 'cuda:N', 'xpu', or 'xpu:N', where N "
+                "is a nonnegative integer."
             ) from exc
 
-        if device.type not in {"cpu", "cuda", "mps"}:
+        if device.type not in {"cpu", "cuda", "mps", "xpu"}:
             raise ValueError(
-                f"Unsupported device type {device.type!r}; use 'cpu', 'mps', 'cuda', or 'cuda:N'."
+                f"Unsupported device type {device.type!r}; use 'cpu', 'mps', 'cuda', 'cuda:N', "
+                "'xpu', or 'xpu:N'."
             )
 
         if device.type in {"cpu", "mps"} and device.index is not None:

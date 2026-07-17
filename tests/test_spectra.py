@@ -18,7 +18,7 @@ def test_c1_returns_correct_mean():
         f_min=0,
         f_max=2,
         device="cpu",
-        frequency_points=21,
+        df=0.1,
     )
 
     result = calculate_spectra(
@@ -35,7 +35,7 @@ def test_c1_returns_mean_when_selected_band_excludes_dc():
         f_min=1,
         f_max=2,
         device="cpu",
-        frequency_points=3,
+        df=0.5,
     )
 
     result = calculate_spectra(
@@ -64,7 +64,7 @@ def test_calculate_spectra_reports_progress(
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=5,
+        df=0.125,
         m=2,
         spectral_estimates_max=2,
         interlacing=interlacing,

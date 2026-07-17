@@ -83,7 +83,7 @@ def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderIndexCache:
         runtime.band_end_idx,
         device=runtime.device,
     )
-    target_indices, valid_mask = build_s3_target_indices(axis_indices, runtime.fft_freq_count)
+    target_indices, valid_mask = build_s3_target_indices(axis_indices, runtime.window_points)
     return ThirdOrderIndexCache(target_indices=target_indices, valid_mask=valid_mask)
 
 
@@ -96,7 +96,7 @@ def build_intermediate_slice_buffer(
         band_start_idx=runtime.band_start_idx,
         band_end_idx=runtime.band_end_idx,
         m=runtime.m,
-        fft_freq_count=runtime.fft_freq_count,
+        fft_freq_count=runtime.window_points,
         coeffs_by_channel=coeffs_by_channel,
         third_order_cache=third_order_cache,
     )

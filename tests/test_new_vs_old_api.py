@@ -66,7 +66,7 @@ def _build_spectrum_config(name: str, channels, legacy_freqs) -> SpectrumConfig:
             f_min=float(legacy_s3_freq[0]),
             f_max=float(legacy_s3_freq[-1]),
             device="cpu",
-            frequency_points=legacy_s3_freq.size,
+            df=legacy_s3_freq[1] - legacy_s3_freq[0],
             interlacing=True,
             old_window=True,
         )
@@ -76,7 +76,7 @@ def _build_spectrum_config(name: str, channels, legacy_freqs) -> SpectrumConfig:
             f_min=-0.25,
             f_max=0.25,
             device="cpu",
-            frequency_points=100,
+            df=0.5/99,
             interlacing=True,
             old_window=True,
         )
@@ -87,7 +87,7 @@ def _build_spectrum_config(name: str, channels, legacy_freqs) -> SpectrumConfig:
             f_min=float(legacy_s3_freq[0]),
             f_max=float(legacy_s3_freq[-1]),
             device="cpu",
-            frequency_points=legacy_s3_freq.size,
+            df=legacy_s3_freq[1] - legacy_s3_freq[0],
             interlacing=True,
             old_window=True,
         )

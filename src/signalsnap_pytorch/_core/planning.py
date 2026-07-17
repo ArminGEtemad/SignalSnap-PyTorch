@@ -49,8 +49,6 @@ class RuntimeConfig:
         Number of samples in each selected data channel.
     freq_all : np.ndarray
         Full frequency axis.
-    fft_freq_count : int
-        Number of frequencies in ``freq_all``. Is equal to ``window_points``.
     freq_band : np.ndarray
         Selected frequency axis.
     band_start_idx, band_end_idx : int
@@ -84,7 +82,6 @@ class RuntimeConfig:
     m: int
     n_data_points: int
     freq_all: np.ndarray
-    fft_freq_count: int
     freq_band: np.ndarray
     band_start_idx: int
     band_end_idx: int
@@ -101,7 +98,7 @@ def _resolve_device(device_name: str) -> torch.device:
     """Validate and resolve a requested PyTorch device.
 
     Supported examples are ``"cpu"``, ``"cuda"``, ``"cuda:0"``,
-    ``"cuda:1"``, and ``"mps"``.
+    ``"cuda:1"``, ``"mps"``, ``"xpu"``, and ``"xpu:0"``.
     """
     try:
         device = torch.device(device_name)
@@ -146,8 +143,30 @@ def _resolve_device(device_name: str) -> torch.device:
 
         return torch.device("mps")
 
+    if device.type == "xpu":
+        xpu = getattr(torch, "xpu", None)
+        if xpu is None or not xpu.is_available():
+            raise RuntimeError(
+                "XPU was requested, but XPU is not available. Check that PyTorch was installed "
+                "with Intel GPU support and that a supported Intel GPU and driver are available."
+            )
+
+        index = device.index
+        if index is None:
+            index = xpu.current_device()
+
+        device_count = xpu.device_count()
+        if index < 0 or index >= device_count:
+            raise RuntimeError(
+                f"XPU device {index} was requested, but only {device_count} XPU device(s) are "
+                "available."
+            )
+
+        return torch.device("xpu", index)
+
     raise ValueError(
-        f"Unsupported device type {device.type!r}. Use 'cpu', 'cuda', 'cuda:N', or 'mps'."
+        f"Unsupported device type {device.type!r}. Use 'cpu', 'cuda', 'cuda:N', 'mps', 'xpu', "
+        "or 'xpu:N'."
     )
 
 
@@ -271,9 +290,12 @@ def resolve_frequencies(
         raise ValueError("f_min outside of Nyquist frequency bounds.")
 
     # Compute how many points must be taken into account in one window to achieve the required
-    # frequency spacing in the given frequency bounds
-    window_T = (spectrum_config.frequency_points - 1) / (f_max - spectrum_config.f_min)
-    window_points = int(np.round(window_T / dt))
+    # frequency spacing in the given frequency bounds.
+    if spectrum_config.df is None:
+        window_points = 1000
+    else:
+        window_points = int(np.round(1/(spectrum_config.df * dt)))
+    
     if window_points <= 0:
         raise ValueError("Calculated window_points must be greater than zero.")
 
@@ -349,7 +371,7 @@ def build_runtime_config(
         real_dtype = torch.float64
         complex_dtype = torch.complex128
     else:
-        if device.type == "mps":
+        if device.type in {"mps", "xpu"}:
             real_dtype = torch.float32
             complex_dtype = torch.complex64
         else:
@@ -384,7 +406,6 @@ def build_runtime_config(
         m=m,
         n_data_points=n_data_points,
         freq_all=freq_all,
-        fft_freq_count=window_points,
         freq_band=freq_all[band_start_idx:band_end_idx],
         band_start_idx=band_start_idx,
         band_end_idx=band_end_idx,

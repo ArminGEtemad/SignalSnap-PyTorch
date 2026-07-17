@@ -88,6 +88,9 @@ def test_hdf5_channel_rejects_invalid_configuration(dataset, selection, message)
         ("cuda", "cuda"),
         ("cuda:0", "cuda:0"),
         ("cuda:1", "cuda:1"),
+        ("xpu", "xpu"),
+        ("xpu:0", "xpu:0"),
+        ("xpu:1", "xpu:1"),
     ],
 )
 def test_spectrum_config_accepts_supported_devices(device, expected):
@@ -102,13 +105,18 @@ def test_spectrum_config_accepts_supported_devices(device, expected):
         "",
         "CPU",
         "cuda:",
-        "cuda:01"
+        "cuda:01",
         "cuda:-1",
         "cuda:abc",
         "cudafoo",
+        "xpu:",
+        "xpu:01",
+        "xpu:-1",
+        "xpu:abc",
+        "xpufoo",
         "cpu:0",
         "mps:0",
-        "xpu",
+        "xla",
         "meta",
     ],
 )

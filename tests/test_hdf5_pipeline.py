@@ -79,7 +79,7 @@ def test_hdf5_and_mixed_channels_match_eager_array_pipeline(tmp_path):
     spectrum_config = SpectrumConfig(
         f_min=-2.5,
         f_max=2.5,
-        frequency_points=9,
+        df=0.625,
         m=4,
         spectral_estimates_max=3,
         interlacing=True,
@@ -115,7 +115,7 @@ def test_pipeline_does_not_open_unrequested_hdf5_channel(tmp_path):
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=5,
+        df=0.125,
         m=4,
     )
 

@@ -17,7 +17,7 @@ def first_window_spectrum_config():
     return SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=5,
+        df=0.125,
     )
 
 

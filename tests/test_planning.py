@@ -10,7 +10,7 @@ from signalsnap_pytorch._core.planning import (
     build_runtime_config,
     iter_window_slices,
     resolve_channels,
-    _resolve_device
+    _resolve_device,
 )
 
 auto_spectra = [(0,), (0, 0)]
@@ -72,10 +72,12 @@ def test_spectral_estimates_in_runtime_config(
     expected_unshifted_estimates,
     expected_m,
 ):
+
+    df = (f_max - 0.0) / (frequency_points - 1)
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=f_max,
-        frequency_points=frequency_points,
+        df=df,
         m=m,
         spectral_estimates_max=spectral_estimates_max,
     )
@@ -156,10 +158,11 @@ def test_window_slices_respect_interlacing(
     expected_slices,
     expected_spectral_estimates,
 ):
+    df = (f_max - 0.0) / (frequency_points - 1)
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=f_max,
-        frequency_points=frequency_points,
+        df=df,
         m=m,
         spectral_estimates_max=None,
         interlacing=interlacing,
@@ -177,7 +180,7 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
     spectrum_config = SpectrumConfig(
         f_min=-0.25,
         f_max=0.25,
-        frequency_points=5,
+        df=0.125,
         m=4,
         spectral_estimates_max=1,
     )
@@ -192,11 +195,8 @@ def test_pipeline_returns_full_axis_third_order_spectrum_with_invalid_points_mas
 
     assert result.spectrum.shape == (result.freq.size, result.freq.size)
 
-    assert spectrum_config.f_max is not None
-    window_duration = (spectrum_config.frequency_points - 1) / (
-        spectrum_config.f_max - spectrum_config.f_min
-    )
-    window_points = int(np.round(window_duration / data_config.dt))
+    assert spectrum_config.df is not None
+    window_points = int(np.round(1 / (spectrum_config.df * data_config.dt)))
     full_fft_freq = np.fft.fftshift(np.fft.fftfreq(window_points, data_config.dt))
     third_factor_freq = -(result.freq[:, None] + result.freq[None, :])
     expected_valid_mask = np.isclose(
@@ -214,7 +214,7 @@ def test_runtime_config_keeps_m_for_exact_unshifted_fit_without_interlacing():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=9,
+        df=0.0625,
         m=4,
         interlacing=False,
         spectral_estimates_max=None,
@@ -231,7 +231,7 @@ def test_runtime_config_raises_when_interlacing_has_no_shifted_estimate():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=9,
+        df=0.0625,
         m=4,
         interlacing=True,
         spectral_estimates_max=None,
@@ -254,7 +254,7 @@ def test_runtime_config_rejects_m_below_requested_order(auto_spectra_channels, m
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=20.0,
-        frequency_points=16,
+        df=20/15,
         m=m,
     )
     data_config = DataConfig(channels=(np.ones(50000),), dt=0.001)
@@ -267,11 +267,14 @@ def test_runtime_config_defaults_to_all_auto_spectra_for_all_channels():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=9,
+        df=0.0625,
         m=4,
     )
     data_config = DataConfig(
-        channels=(np.ones(136), np.ones(136),),
+        channels=(
+            np.ones(136),
+            np.ones(136),
+        ),
         dt=1.0,
     )
 
@@ -294,7 +297,7 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=0.5,
-        frequency_points=9,
+        df=0.0625,
         m=4,
     )
     data_config = DataConfig(channels=(np.ones(136),), dt=1.0)
@@ -309,9 +312,7 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
         pytest.param([], ValueError, "at least one spectrum", id="empty-request"),
         pytest.param([[]], TypeError, "must be a tuple", id="non-tuple-spectrum"),
         pytest.param([()], ValueError, "between 1 and 4", id="order-zero"),
-        pytest.param(
-            [(0, 0, 0, 0, 0)], ValueError, "between 1 and 4", id="order-five"
-        ),
+        pytest.param([(0, 0, 0, 0, 0)], ValueError, "between 1 and 4", id="order-five"),
         pytest.param([(True,)], TypeError, "must be integers", id="boolean-index"),
         pytest.param([(0.0,)], TypeError, "must be integers", id="float-index"),
         pytest.param([(-1,)], ValueError, "nonnegative", id="negative-index"),
@@ -321,9 +322,7 @@ def test_runtime_config_rejects_out_of_bounds_spectra_channel_indices():
         ),
     ],
 )
-def test_resolve_channels_rejects_invalid_requests(
-    requested_spectra, exception_type, message
-):
+def test_resolve_channels_rejects_invalid_requests(requested_spectra, exception_type, message):
     with pytest.raises(exception_type, match=message):
         resolve_channels(requested_spectra, channel_count=2)
 
@@ -388,3 +387,55 @@ def test_resolve_plain_cuda_to_current_device(monkeypatch):
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
 
     assert _resolve_device("cuda") == torch.device("cuda:1")
+
+
+def test_resolve_device_rejects_unavailable_xpu(monkeypatch):
+    monkeypatch.setattr(torch.xpu, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="XPU is not available"):
+        _resolve_device("xpu")
+
+
+def test_resolve_device_accepts_existing_xpu_index(monkeypatch):
+    monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+    monkeypatch.setattr(torch.xpu, "device_count", lambda: 2)
+
+    assert _resolve_device("xpu:1") == torch.device("xpu:1")
+
+
+def test_resolve_device_rejects_missing_xpu_index(monkeypatch):
+    monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+    monkeypatch.setattr(torch.xpu, "device_count", lambda: 1)
+
+    with pytest.raises(RuntimeError, match="only 1 XPU device"):
+        _resolve_device("xpu:1")
+
+
+def test_resolve_plain_xpu_to_current_device(monkeypatch):
+    monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+    monkeypatch.setattr(torch.xpu, "current_device", lambda: 1)
+    monkeypatch.setattr(torch.xpu, "device_count", lambda: 2)
+
+    assert _resolve_device("xpu") == torch.device("xpu:1")
+
+
+def test_runtime_config_auto_precision_uses_single_on_xpu(monkeypatch):
+    monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+    monkeypatch.setattr(torch.xpu, "current_device", lambda: 0)
+    monkeypatch.setattr(torch.xpu, "device_count", lambda: 1)
+
+    runtime = _build_runtime(
+        DataConfig(channels=(np.ones(136),), dt=1.0),
+        SpectrumConfig(
+            f_min=0.0,
+            f_max=0.5,
+            df=0.0625,
+            m=4,
+            device="xpu",
+        ),
+        auto_spectra,
+    )
+
+    assert runtime.device == torch.device("xpu:0")
+    assert runtime.real_dtype == torch.float32
+    assert runtime.complex_dtype == torch.complex64
