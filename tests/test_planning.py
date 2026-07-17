@@ -254,7 +254,7 @@ def test_runtime_config_rejects_m_below_requested_order(auto_spectra_channels, m
     spectrum_config = SpectrumConfig(
         f_min=0.0,
         f_max=20.0,
-        df=20/15,
+        df=20 / 15,
         m=m,
     )
     data_config = DataConfig(channels=(np.ones(50000),), dt=0.001)

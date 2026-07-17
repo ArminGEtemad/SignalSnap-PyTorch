@@ -72,7 +72,10 @@ def test_hdf5_and_mixed_channels_match_eager_array_pipeline(tmp_path):
         t_unit="s",
     )
     mixed_config = DataConfig(
-        channels=(hdf5_config.channels[0], eager_channels[1],),
+        channels=(
+            hdf5_config.channels[0],
+            eager_channels[1],
+        ),
         dt=0.1,
         t_unit="s",
     )

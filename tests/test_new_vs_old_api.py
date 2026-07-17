@@ -76,7 +76,7 @@ def _build_spectrum_config(name: str, channels, legacy_freqs) -> SpectrumConfig:
             f_min=-0.25,
             f_max=0.25,
             device="cpu",
-            df=0.5/99,
+            df=0.5 / 99,
             interlacing=True,
             old_window=True,
         )
@@ -102,9 +102,7 @@ def _calculate_legacy_case(name, reference_file, channels, prepared_data):
         legacy_freqs = benchmark["freqs"].item()
 
     spectrum_config = _build_spectrum_config(name, channels, legacy_freqs)
-    result_store = calculate_spectra(
-        prepared_data, spectrum_config, requested_spectra=channels
-    )
+    result_store = calculate_spectra(prepared_data, spectrum_config, requested_spectra=channels)
     return result_store, legacy_spectra, legacy_errors, legacy_freqs
 
 

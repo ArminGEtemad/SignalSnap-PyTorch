@@ -37,7 +37,7 @@ def test_array_empty_read():
 
 
 def test_array_read_accepts_numpy_integer_bounds():
-    result = read_channel(np.arange(10), np.int64(2), np.int32(6)) # type: ignore
+    result = read_channel(np.arange(10), np.int64(2), np.int32(6))  # type: ignore
 
     np.testing.assert_array_equal(result, np.array([2, 3, 4, 5]))
 
@@ -210,7 +210,9 @@ def test_open_channels_preserves_array_and_hdf5_channel_order(hdf5_file):
     with _open_all_channels(config) as channels:
         assert channels[0] is array
         assert isinstance(channels[1], HDF5ChannelState)
-        np.testing.assert_array_equal(read_channel(channels[1], 0, 4), values[:, :, 1].reshape(-1)[:4])
+        np.testing.assert_array_equal(
+            read_channel(channels[1], 0, 4), values[:, :, 1].reshape(-1)[:4]
+        )
 
 
 def test_open_channels_closes_hdf5_file_after_context(hdf5_file):
@@ -266,9 +268,7 @@ def test_channels_from_same_file_share_file_handle(hdf5_file):
         ((slice(None), slice(None), slice(None)), ValueError, "at most two"),
     ],
 )
-def test_open_channels_rejects_invalid_hdf5_selection(
-    hdf5_file, selection, exception, message
-):
+def test_open_channels_rejects_invalid_hdf5_selection(hdf5_file, selection, exception, message):
     path, _ = hdf5_file
     config = DataConfig(
         channels=(HDF5Channel(file=path, dataset="/signals", selection=selection),),
@@ -413,7 +413,7 @@ def test_two_dimensional_hdf5_read_converts_to_native_byte_order(tmp_path):
 
 def test_hdf5_channel_normalizes_numpy_integer_selection():
     channel = HDF5Channel(
-        file="data.h5", # type: ignore
+        file="data.h5",  # type: ignore
         dataset="/signals",
         selection=(slice(None), np.int64(2)),
     )

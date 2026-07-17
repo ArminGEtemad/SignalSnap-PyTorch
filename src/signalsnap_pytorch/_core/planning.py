@@ -294,8 +294,8 @@ def resolve_frequencies(
     if spectrum_config.df is None:
         window_points = 1000
     else:
-        window_points = int(np.round(1/(spectrum_config.df * dt)))
-    
+        window_points = int(np.round(1 / (spectrum_config.df * dt)))
+
     if window_points <= 0:
         raise ValueError("Calculated window_points must be greater than zero.")
 
@@ -451,7 +451,5 @@ def window_slice_count(runtime: RuntimeConfig) -> int:
         return total
 
     chunk_size = runtime.window_points * runtime.m
-    available_shifted = max(
-        0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size
-    )
+    available_shifted = max(0, (runtime.n_data_points - runtime.window_points // 2) // chunk_size)
     return total + min(runtime.spectral_estimates, available_shifted)

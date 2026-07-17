@@ -80,6 +80,7 @@ def test_hdf5_channel_rejects_invalid_configuration(dataset, selection, message)
             selection=selection,
         )
 
+
 @pytest.mark.parametrize(
     ("device", "expected"),
     [

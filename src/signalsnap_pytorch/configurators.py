@@ -174,7 +174,7 @@ class SpectrumConfig(BaseModel):
     are related via:
 
         window_points = 1 / (dt * df),
-    
+
     where `window_points` is the number of samples used for each DFT. The calculation will use the
     closest available frequency spacing. Check the frequency axis of the
     :class:`~signalsnap_pytorch.results.SpectrumResult` to see the true frequencies.
@@ -256,8 +256,6 @@ class SpectrumConfig(BaseModel):
             )
 
         if device.type in {"cpu", "mps"} and device.index is not None:
-            raise ValueError(
-                f"{device.type!r} does not support a numbered device index."
-            )
+            raise ValueError(f"{device.type!r} does not support a numbered device index.")
 
         return str(device)
