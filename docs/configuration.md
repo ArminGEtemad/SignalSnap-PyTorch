@@ -1,0 +1,128 @@
+# Calculation configuration
+
+[Documentation index](README.md)
+
+## Input data
+
+`DataConfig` describes the channels and their common sampling interval:
+
+```python
+data_config = DataConfig(
+    channels=(channel_0, channel_1),
+    dt=2.0,
+    t_unit="ns",
+)
+```
+
+`dt` is the time interval between consecutive samples in units of `t_unit`. Supported time units are
+`"s"`, `"ms"`, `"us"`, `"ns"`, and `"ps"`; SignalSnap selects the corresponding frequency unit. For
+example, `t_unit = "us"` will select the frequency unit `"MHz"`.
+
+Array-backed channels must be one-dimensional, nonempty, real numeric arrays. All channels used in
+one calculation must contain the same number of samples, e.g., through slicing. HDF5-backed channels
+are described in the [HDF5 guide](hdf5.md).
+
+## Spectrum settings
+
+```python
+spectrum_config = SpectrumConfig(
+    df=0.0005,
+    f_min=-0.10,
+    f_max=0.25,
+    m=10,
+    device="cuda",
+    precision="auto",
+    spectral_estimates_max=1000,
+    interlacing=True,
+)
+```
+
+| Setting | Description |
+| --- | --- |
+| `df` | Requested frequency spacing. If omitted, each FFT window uses 1000 samples. |
+| `f_min`, `f_max` | Requested frequency interval. `f_max=None` uses the Nyquist frequency as an upper bound. `f_min` may be negative. |
+| `m` | Number of FFT windows contributing to each cumulant estimate. |
+| `device` | `"cpu"`, `"cuda"`, `"cuda:N"`, `"mps"`, `"xpu"`, or `"xpu:N"`. |
+| `precision` | `"single"`, `"double"`, or device-dependent `"auto"`. |
+| `spectral_estimates_max` | Maximum unshifted estimates, or `None` to use all available data. |
+| `interlacing` | Also calculate estimates shifted by half a window. |
+| `old_window` | Compatibility option: uses the approximate confined Gaussian window from the original API. Intended only for reproducing results from the original API. |
+
+Configuration objects are immutable and reject unknown fields.
+
+### Frequency resolution and FFT windows
+
+`df` specifies the requested frequency spacing. Together with the sampling interval `dt`, it
+determines the FFT window length:
+
+$$
+\mathrm{window\_points} = \operatorname{round}\left(\frac{1}{\mathrm{dt} \cdot \mathrm{df}}\right).
+$$
+
+Because the window length must be an integer, the actual frequency spacing can differ slightly from
+the requested value:
+
+$$
+\mathrm{df}_\mathrm{actual}
+= \frac{1}{\mathrm{dt} \cdot \mathrm{window\_points}}.
+$$
+
+If `df` is omitted, `window_points` defaults to 1000 samples. Use `result.freq` as the authoritative
+frequency axis.
+
+The requested interval must remain within the Nyquist bounds `[-1/(2*dt), 1/(2*dt)]`. When `f_max`
+is omitted, the positive Nyquist frequency is used as an upper bound.
+
+Each channel is divided into FFT windows of `window_points` samples. One spectral estimate consumes
+`m * window_points` samples: the `m` Fourier-coefficient vectors form the sample used by the
+multivariate k-statistic. Consecutive groups produce repeated spectral estimates, which are averaged
+to obtain the final result and its standard error. See the
+[Scientific background](scientific-background.md) for a detailed description of the calculation.
+
+### Choosing `m`
+
+For a spectrum of order `n`, the effective `m` must be at least `n`. If the trace is too short for
+the configured `m`, SignalSnap warns and reduces it to the largest usable value. The calculation
+fails if the reduced value is smaller than the highest requested order. `m=10` is the default value.
+
+Lowering `m` below the default results in noisier cumulant estimates and is generally not
+recommended if the data trace is long enough. Larger values of `m` provide more Fourier-coefficient
+vectors per cumulant estimate but produce fewer spectral estimates for a fixed trace length. This
+can improve computational efficiency since more data is processed in parallel. The
+[statistical assumptions](scientific-background.md#statistical-assumptions) remain important.
+
+### Devices and precision
+
+`device` accepts `cpu`, `mps`, `cuda`, `xpu`, or a numbered accelerator such as `cuda:1` or
+`xpu:1`. ROCm devices are also chosen using `cuda`. XPU and ROCm support is experimental because the
+complete spectrum calculation has not yet been verified on Intel and AMD GPU hardware.
+
+`precision="single"` uses `float32` and `complex64`; `"double"` uses `float64` and `complex128`.
+`"auto"` selects single precision on MPS and XPU and double precision elsewhere.
+
+On a machine with an available Intel GPU, users can run the numerical CPU/XPU comparison with
+`python -m pytest tests/test_xpu.py` to verify that its outputs match the CPU results. The test is
+skipped automatically on other systems.
+
+### Limiting repeated estimates
+
+`spectral_estimates_max` limits the number of estimates computed from the signal. The actual number
+may still be smaller when the trace contains insufficient data. Set it to `None` to calculate as
+many estimates as possible.
+
+At least two estimates are needed for a standard-error result. Longer traces usually provide more
+useful error estimates.
+
+### Interlacing
+
+With `interlacing=True`, SignalSnap also calculates estimates shifted by half an FFT window. This
+reduces the low weight assigned to samples near the edges of the original window placement. The
+trace must be long enough to contain at least one shifted estimate. `spectral_estimates_max` applies
+only to unshifted estimates.
+
+The final spectrum is averaged over the available unshifted and shifted estimates. Errors are
+calculated separately for the two groups, and the component-wise maximum is reported when each group
+contains at least two estimates. If there are two unshifted but only one shifted estimate, the error
+is taken from the unshifted estimates only.
+
+Next: [Working with results](results.md).

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "signalsnap-pytorch"
 version = "2.0.0"
-description = "SignalSnap (PyTorch): Signal Analysis In Python Made Easy"
+description = "SignalSnap (PyTorch): Higher-order spectral analysis for real, multi-channel time series."
 readme = "README.md"
 authors = [
     { name = "Armin Ghorbanietemad", email = "armin.ghorbanietemad@rub.de"},
