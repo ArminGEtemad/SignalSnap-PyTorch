@@ -63,10 +63,10 @@ denotes the different samples of one channel, but different channels):
 
 ```math
 \begin{aligned}
-S_{z_1}^{(1)} \approx & \frac{N C_1(a_0)}{T \sum_{i=0}^{N-1}g_i}, \quad \text{with:} \quad C_1(x) = \langle x\rangle\\
-S_{z_1,z_2}^{(2)}(\omega_k) \approx & \frac{N C_2(a_k, b_k^\ast)}{T \sum_{i=0}^{N-1}g_i g_i^\ast}\\
-S_{z_1,z_2,z_3}^{(3)}(\omega_k, \omega_l) \approx & \frac{N C_3(a_k, b_l, c_{k+l}^\ast)}{T \sum_{i=0}^{N-1}g_i^2 g_i^\ast}\\
-S_{z_1,z_2,z_3,z_4}^{(4)}(\omega_k, \omega_l) \approx & \frac{N C_4(a_k, b_k^\ast, c_l, d_l^\ast)}{T \sum_{i=0}^{N-1}g_i^3 g_i^\ast}\\
+S_{z_1}^{(1)} & \approx \frac{N C_1(a_0)}{T \sum_{i=0}^{N-1}g_i}, \quad \text{with:} \quad C_1(x) = \langle x\rangle\\
+S_{z_1,z_2}^{(2)}(\omega_k) & \approx \frac{N C_2(a_k, b_k^\ast)}{T \sum_{i=0}^{N-1}g_i g_i^\ast}\\
+S_{z_1,z_2,z_3}^{(3)}(\omega_k, \omega_l) & \approx \frac{N C_3(a_k, b_l, c_{k+l}^\ast)}{T \sum_{i=0}^{N-1}g_i^2 g_i^\ast}\\
+S_{z_1,z_2,z_3,z_4}^{(4)}(\omega_k, \omega_l) & \approx \frac{N C_4(a_k, b_k^\ast, c_l, d_l^\ast)}{T \sum_{i=0}^{N-1}g_i^3 g_i^\ast}\\
 \end{aligned}
 ```
 
@@ -84,12 +84,12 @@ SignalSnap implements unbiased, finite-sample, multivariate cumulant estimators 
 
 ```math
 \begin{aligned}
-c_2(x, y) = & \frac{m}{m-1} (\overline{xy} - \overline{x}\,\overline{y}) = \frac{m}{m-1}\overline{(x-\overline{x})(y-\overline{y})}\\
-c_3(x, y, z) = & \frac{m^2}{(m-1)(m-2)}\overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})}\\
-c_4(x, y, z, w) = &\frac{m^2}{(m-1)(m-2)(m-3)} \times \biggl[(m+1) \times \overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\quad\qquad{}- (m-1) \times \Bigl(\overline{(x-\overline{x})(y-\overline{y})} \times \overline{(z-\overline{z})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad{}+ \overline{(x-\overline{x})(z-\overline{z})} \times \overline{(y-\overline{y})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad{}+ \overline{(x-\overline{x})(w-\overline{w})} \times \overline{(y-\overline{y})(z-\overline{z})}\Bigr)\biggr]
+c_2(x, y) &= \frac{m}{m-1} (\overline{xy} - \overline{x}\,\overline{y}) = \frac{m}{m-1}\overline{(x-\overline{x})(y-\overline{y})}\\
+c_3(x, y, z) &= \frac{m^2}{(m-1)(m-2)}\overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})}\\
+c_4(x, y, z, w) &= \frac{m^2}{(m-1)(m-2)(m-3)} \times \biggl[(m+1) \times \overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})(w-\overline{w})}\\
+&\qquad\qquad\qquad\qquad\qquad\qquad{}- (m-1) \times \Bigl(\overline{(x-\overline{x})(y-\overline{y})} \times \overline{(z-\overline{z})(w-\overline{w})}\\
+&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(z-\overline{z})} \times \overline{(y-\overline{y})(w-\overline{w})}\\
+&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(w-\overline{w})} \times \overline{(y-\overline{y})(z-\overline{z})}\Bigr)\biggr]
 \end{aligned}
 ```
 
