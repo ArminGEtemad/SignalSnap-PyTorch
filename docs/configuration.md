@@ -56,7 +56,7 @@ Configuration objects are immutable and reject unknown fields.
 determines the FFT window length:
 
 $$
-\mathrm{window\_points} = \operatorname{round}\left(\frac{1}{\mathrm{dt} \cdot \mathrm{df}}\right).
+\mathrm{window\_points} = \mathrm{round}\left(\frac{1}{\mathrm{dt} \cdot \mathrm{df}}\right).
 $$
 
 Because the window length must be an integer, the actual frequency spacing can differ slightly from
