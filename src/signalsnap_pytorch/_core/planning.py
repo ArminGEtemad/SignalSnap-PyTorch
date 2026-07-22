@@ -63,14 +63,14 @@ class RuntimeConfig:
         Torch device used for calculation.
     spectral_estimates: int
         Number of unshifted spectral estimates processed by the base calculation. If
-        ``interlacing=True``, up to the same number of additional shifted estimates are calculated
+        `interlacing=True`, up to the same number of additional shifted estimates are calculated
         when enough data is available.
     interlacing : bool
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
         window edges.
     old_window : bool
-        Compatibility option. If set to ``True``, the approximated confined Gaussian window from the
+        Compatibility option. If set to `True`, the approximated confined Gaussian window from the
         old API is used as a window function.
     """
 
@@ -97,8 +97,8 @@ class RuntimeConfig:
 def _resolve_device(device_name: str) -> torch.device:
     """Validate and resolve a requested PyTorch device.
 
-    Supported examples are ``"cpu"``, ``"cuda"``, ``"cuda:0"``,
-    ``"cuda:1"``, ``"mps"``, ``"xpu"``, and ``"xpu:0"``.
+    Supported examples are `"cpu"`, `"cuda"`, `"cuda:0"`, `"cuda:1"`, `"mps"`, `"xpu"`, and
+    `"xpu:0"`.
     """
     try:
         device = torch.device(device_name)
@@ -273,6 +273,20 @@ def _get_and_validate_selected_channels(
 def resolve_frequencies(
     spectrum_config: SpectrumConfig, dt: float
 ) -> tuple[int, NDArray[np.floating[Any]], int, int]:
+    """Resolve frequencies based on the user's :class:`SpectrumConfig`.
+
+    Parameters
+    ----------
+    spectrum_config : :class:`SpectrumConfig`
+        Spectrum configuration options.
+    dt : float
+        Time step of the specified data channels.
+
+    Returns
+    -------
+    tuple[int, NDArray[np.floating[Any]], int, int]
+        Includes resolved window_points, frequency grid, band start index, and band end index.
+    """
     # Validate and resolve the frequency bounds
     f_max_allowed = 1 / (2 * dt)
     f_max = spectrum_config.f_max
@@ -331,14 +345,21 @@ def build_runtime_config(
     ----------
     data_config : :class:`DataConfig`
         Data configurations containing the input data and sampling metadata.
-    opened_channels : tuple[Any | :class:`~signalsnap_pytorch._core.data_access.HDF5ChannelState`]
-        Opened runtime representation of ``data_config.channels``. Array channels are retained
+    opened_channels : Mapping[int, Any | :class:`~signalsnap_pytorch._core.data_access.HDF5ChannelState`]
+        Opened runtime representation of `data_config.channels`. Array channels are retained
         directly; HDF5 channels are represented by HDF5ChannelState instances.
     spectrum_config : :class:`SpectrumConfig`
         User configuration for frequency bounds, precision, device, windowing, and
         related calculation options.
-    spectra_channels : tuple[tuple[int, ...], ...] | None
+    spectra_channels : tuple[tuple[int, ...], ...]
+        Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
+        or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
+        in `data_config.channels`.
 
+    Returns
+    -------
+    RuntimeConfig
+        Resolved runtime configuration.
     """
 
     # Validate and read the channels, number of data points, and the time step from the
@@ -428,9 +449,9 @@ def build_runtime_config(
 def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
     """Return the window slice indices.
 
-    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data
-    channel, where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled,
-    additional slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
+    Each yielded `(start, end, shifted)` selects `m * N` samples from a one-dimensional data
+    channel, where `m = runtime.m` and `N = runtime.window_points`. With interlacing enabled,
+    additional slices shifted by `N // 2` are yielded when they still fit inside the signal.
     """
 
     chunk_size = runtime.window_points * runtime.m

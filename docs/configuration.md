@@ -18,9 +18,9 @@ data_config = DataConfig(
 `"s"`, `"ms"`, `"us"`, `"ns"`, and `"ps"`; SignalSnap selects the corresponding frequency unit. For
 example, `t_unit = "us"` will select the frequency unit `"MHz"`.
 
-Array-backed channels must be one-dimensional, nonempty, real numeric arrays. All channels used in
-one calculation must contain the same number of samples, e.g., through slicing. HDF5-backed channels
-are described in the [HDF5 guide](hdf5.md).
+Array-backed channels must be one-dimensional, nonempty, real-valued numeric or Boolen arrays. All
+channels used in one calculation must contain the same number of samples, e.g., through slicing.
+HDF5-backed channels are described in the [HDF5 guide](hdf5.md).
 
 ## Spectrum settings
 

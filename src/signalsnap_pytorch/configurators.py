@@ -25,25 +25,27 @@ class DataConfig(BaseModel):
     These settings are later resolved together with :class:`SpectrumConfig` into the internal
     runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
-    Together with ``df`` calculated based on parameters in :class:`SpectrumConfig`, ``dt`` will be
-    used to determine the number of data points (``window_points``) used for each Fourier
-    transform:
+    Together with `df` from :class:`SpectrumConfig`, `dt` will be used to determine the number of
+    data points (`window_points`) used for each Fourier transform:
 
-        window_points = 1 / (dt * df)
+        window_points = round(1 / (dt * df))
 
     and to determine the Nyquist frequency:
 
         f_nyquist = 1 / (2 * dt)
 
+    If `df` is not specified in :class:`SpectrumConfig`, `window_points` will be set to `1000`.
+
     Attributes
     ----------
     channels : tuple[Any, ...]
-        List of data channels. Each channel is recorded (real) signal data and can either be an
-        array with a shape and dtype attribute or a :class:`HDF5Channel`.
+        Tuple of data channels. Each channel is recorded (real) signal data and can either be a
+        one-dimensional, nonempty, real-valued numeric or Boolean array with a shape and dtype
+        attribute or a :class:`HDF5Channel`.
     dt : float
         The time interval between two consecutive data points. Must be positive.
     t_unit : Literal["s", "ms", "us", "ns", "ps"]
-        Unit of the time step. Defaults to ``"s"``.
+        Unit of the time step. Defaults to `"s"`.
     """
 
     model_config = _SHARED_CONFIG
@@ -91,7 +93,23 @@ class DataConfig(BaseModel):
 
 
 class HDF5Channel(BaseModel):
-    """Location of one signal channel inside an HDF5 dataset."""
+    """Configuration for HDF5 input channels.
+
+    The specified data channel inside the HDF5 file is loaded lazily to allow for inputs exceeding
+    system memory.
+
+    Attributes
+    ----------
+    file : Path
+        File path of the HDF5 file.
+    dataset : str
+        Dataset path inside the HDF5 file.
+    selection : tuple[Any, ...]
+        Selection of the data channel in the dataset. Can include integer and slice selectors. Slice
+        step must be 1. The selection must contain a non-empty, real-valued numeric or Boolean
+        output and can have at most two unfixed dimensions. The selected values are flattened in
+        C-order. Example: (slice(None), slice(None), 0).
+    """
 
     model_config = _SHARED_CONFIG
 
@@ -165,15 +183,16 @@ class HDF5Channel(BaseModel):
 class SpectrumConfig(BaseModel):
     """Spectrum configuration for polyspectra calculations.
 
-    :class:`SpectrumConfig` describes what the user asks the calculation to use: frquency spacing
+    :class:`SpectrumConfig` describes what the user asks the calculation to use: frequency spacing
     and bounds, window count per spectral estimate, backend torch device, and compatibility options.
-    These settings are later resolved together with :class:`DataConfig` into the internal runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
+    These settings are later resolved together with :class:`DataConfig` into the internal runtime
+    configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
     `df` is the REQUESTED frequency spacing. Note, that the discrete Fourier transform cannot result
     in arbitrary frequency spacings with a given sample spacing `dt` from :class:`DataConfig`. They
     are related via:
 
-        window_points = 1 / (dt * df),
+        window_points = round(1 / (dt * df)),
 
     where `window_points` is the number of samples used for each DFT. The calculation will use the
     closest available frequency spacing. Check the frequency axis of the
@@ -182,27 +201,27 @@ class SpectrumConfig(BaseModel):
     Attributes
     ----------
     df : float | None
-        Frequency spacing in the specified frequency range. Must be positive. If omitted,
+        Requested frequency spacing in the specified frequency range. Must be positive. If omitted,
         `window_points` will be set to 1000.
     f_min : float = 0.0
         Lower frequency bound. If omitted, zero is used.
     f_max : float | None = None
         Upper frequency bound. If omitted, the Nyquist frequency based on :class:`DataConfig`'s
-        ``dt`` is used.
+        `dt` is used.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
-        is too short. Must be positive.
+        is too short. Must be at least as high as the highest requested order. Must be positive.
     device : str = "cpu"
-        Torch device requested for calculation. Can be ``"cpu"``, ``"cuda"``, ``"cuda:N"``,
-        ``"mps"``, ``"xpu"``, or ``"xpu:N"``.
+        Torch device requested for calculation. Can be `"cpu"`, `"cuda"`, `"cuda:N"`, `"mps"`,
+        `"xpu"`, or `"xpu:N"`.
     precision : Literal["auto", "single", "double"] = "auto"
-        Floating point precision. ``single`` will result in ``float32`` and ``complex64``.
-        ``double`` will result in ``float64`` and ``complex128``. ``auto`` will choose ``single`` if
-        device is ``mps`` or ``xpu`` and ``double`` if device is ``cpu`` or ``cuda``.
+        Floating point precision. `single` will result in `float32` and `complex64`. `double` will
+        result in `float64` and `complex128`. `auto` will choose `single` if device is `mps` or
+        `xpu` and `double` if device is `cpu` or `cuda`.
     spectral_estimates_max : int | None = int(1e6)
-        Maximum number of unshifted spectral estimates. If ``None``, as many estimates as possible
+        Maximum number of unshifted spectral estimates. If `None`, as many estimates as possible
         are calculated based on the data. The true number of spectral estimates may be lower if the
-        data does not have enough samples. If ``interlacing=True``, up to the same number of
+        data does not have enough samples. If `interlacing=True`, up to the same number of
         additional shifted estimates are calculated. The number of shifted estimates may also be one
         less than the number of unshifted estimates if the final shifted windows do not fit. Must be
         positive.
@@ -212,8 +231,8 @@ class SpectrumConfig(BaseModel):
         window edges. Error estimates are calculated separately for unshifted and shifted spectra;
         when both are available, the reported error is the component-wise maximum of both estimates.
     old_window : bool = False
-        Compatibility option. If set to ``True``, the approximated confined Gaussian window from
-        the old API is used as a window function.
+        Compatibility option to reproduce legacy results. If set to `True`, the old window
+        function from the old API is used as a window function.
     """
 
     model_config = _SHARED_CONFIG

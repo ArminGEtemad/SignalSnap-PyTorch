@@ -25,19 +25,44 @@ from .planning import RuntimeConfig
 
 @dataclass(slots=True)
 class ThirdOrderIndexCache:
+    """Describes where the third frequency lies for the corresponding frequency axis used in the
+    calculation.
+
+
+    """
+
     target_indices: Tensor
     valid_mask: Tensor
 
 
 @dataclass(slots=True)
 class ThirdOrderFactor:
+    """Stores the Fourier coefficients for the third frequency based on the indices in
+    :class:`ThirdOrderIndexCache`.
+    """
+
     centered_a_w3: Tensor
     valid_mask: Tensor
 
 
 @dataclass(slots=True)
 class IntermediateSliceBuffer:
-    """Stores precomputed intermediate results used in compute_single_spectrum()."""
+    """Stores precomputed intermediate results used in :func:`compute_single_spectrum`.
+
+    Attributes
+    ----------
+    band_start_idx, band_end_idx : int
+        Start and end index (corresponding to `f_min` and `f_max`) of the selected frequency band in
+        the full Fourier coefficients.
+    m : int
+        Number of windows per spectral estimate.
+    fft_freq_count : int
+        Length of the full Fourier coefficients.
+    coeffs_by_channel : dict[int, Tensor]
+        Full Fourier coefficients by channel.
+    third_order_cache : :class:`ThirdOrderIndexCache` | None
+        Indices of the third frequency for the corresponding frequency axis.
+    """
 
     band_start_idx: int
     band_end_idx: int
@@ -50,6 +75,7 @@ class IntermediateSliceBuffer:
     _centered_c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(default_factory=dict)
 
     def centered_coeffs_by_channel_band(self, channel: int, conjugated: bool = False) -> Tensor:
+        """Returns the centered Fourier coefficients in the specified frequency band"""
         if channel not in self._centered_coeffs_by_channel_band:
             coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx]
             self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
@@ -60,6 +86,9 @@ class IntermediateSliceBuffer:
             return self._centered_coeffs_by_channel_band[channel]
 
     def centered_c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
+        """Returns the centered Fourier coefficients for the c3 third factor in the specified
+        frequency band.
+        """
         if channel not in self._centered_c3_third_factor_by_channel:
             if self.third_order_cache is None:
                 raise ValueError("Third-order spectra require third_order_cache.")
@@ -113,13 +142,25 @@ def compute_single_spectrum(
     Dispatches to the cumulant implementation for orders 1 through 4 and applies the matching window
     normalization.
 
-    ``coeffs_by_channel`` maps each channel index to shifted full-FFT coefficients with shape
-    ``(m, N)``. The selected frequency band has length
-    ``F = runtime.band_end_idx - runtime.band_start_idx``.
+    Parameters
+    ----------
+    channels : tuple[int, ...]
+        Specifies the corresponding channels of the spectra to be computed, e.g. (0, 0, 0) for a
+        third-order auto-spectrum.
+    intermediate_buffer : :class:`IntermediateSliceBuffer`
+        Stores the precomputed computed Fourier coefficients and bands for the current slice.
+    window_buffer : :class:`WindowBuffer`
+        Stores all information related to the window function.
+    runtime : :class:`RuntimeConfig`
+        Resolved calculation settings derived from user configuration.
 
-    Returns a conjugated, window-normalized spectrum. Output shape depends on order: order 1 returns
-    ``(1,)``, order 2 returns ``(F,)``, and orders 3 and 4 return ``(F, F)``. Invalid third-order
-    points, where ``w3 = -(w1 + w2)`` is outside the shifted FFT support, are filled with ``NaN``.
+    Returns
+    -------
+    Tensor
+        Single spectral estimate for the specified spectrum. Output shape depends on order: order 1
+        returns `(1,)`, order 2 returns `(F,)`, and orders 3 and 4 return `(F, F)`, with F being the
+        length of the selected frequency band. Invalid third-order points, where `w3 = -(w1 + w2)`
+        is outside the shifted FFT support, are filled with `NaN`.
     """
     order = len(channels)
 

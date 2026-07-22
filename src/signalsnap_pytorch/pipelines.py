@@ -35,6 +35,9 @@ def calculate_spectra(
     signal chunks, computes Fourier coefficients, accumulates spectra, and finalizes mean spectra
     and standard-error estimates.
 
+    Per-spectrum calculation and finalization failures emit a RuntimeWarning and the corresponding
+    result is omitted.
+
     Parameters
     ----------
     data_config : :class:`DataConfig`
@@ -44,18 +47,19 @@ def calculate_spectra(
     requested_spectra : list[tuple[int, ...]] | None
         Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
         or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
-        in ``data_config.channels``. If ``None``, the auto-correlation spectra of orders 1 to 4 will
-        be calculated for all available data channels.
+        in `data_config.channels`. Each tuple must contain one through four entries. Duplicate
+        tuples and invalid channels are rejected. If `None`, the auto-correlation spectra of orders
+        1 to 4 will be calculated for all available data channels.
     show_progress : bool
         Display a progress bar with elapsed time and an estimated time remaining. Progress is
         measured in spectral estimates, each of which includes reading the required channel data,
         computing Fourier coefficients, and accumulating every requested spectrum. Defaults to
-        ``True``.
+        `True`.
 
     Returns
     -------
     SpectrumResultStore
-        Finalized spectra indexed by ``channels``.
+        Finalized spectra indexed by `channels`.
     """
 
     spectra_channels, active_data_channels = _planning.resolve_channels(

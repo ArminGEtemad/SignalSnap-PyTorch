@@ -43,16 +43,17 @@ class PlotStyle(BaseModel):
     Attributes
     ----------
     f_min, f_max : float
-        Frequency range displayed in plots.
+        Frequency range displayed in plots. These values only crop the displayed axes and do not
+        recalculate or resample the data.
     sigma : float
         Default standard-error level for second-order uncertainty intervals and the insignificance
         threshold for higher-order spectra.
     uncertainty_levels : list[float] | None
-        Standard-error levels displayed as uncertainty bands for second-order spectra. If ``None``,
-        a single band at ``sigma`` is displayed.
+        Standard-error levels displayed as uncertainty bands for second-order spectra. If `None`, a
+        single band at `sigma` is displayed.
     arcsinh_ratio : float | None
         Relative width of the approximately linear region used for arcsinh display scaling. If
-        ``None``, no scaling is applied.
+        `None`, no scaling is applied.
     plot_format : list[Literal["re", "im"]]
         Spectrum components to plot.
     insignificance_alpha : float
@@ -116,7 +117,7 @@ class SpectrumFigure:
         Returns
         -------
         str
-            Filename in the form ``s{order}_channels_{channels}.{extension}``.
+            Filename in the form `s{order}_channels_{channels}.{extension}`.
         """
 
         channel_label = "_".join(map(str, self.channels))
@@ -136,7 +137,7 @@ def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
     Returns
     -------
     float | None
-        Scaling width, or ``None`` if the data has no finite nonzero values.
+        Scaling width, or `None` if the data has no finite nonzero values.
     """
 
     finite = np.asarray(data)[np.isfinite(data)]
@@ -170,7 +171,7 @@ def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
     Raises
     ------
     ValueError
-        If ``component`` is not ``"re"`` or ``"im"``.
+        If `component` is not `"re"` or `"im"`.
     """
 
     if component == "re":
@@ -191,7 +192,7 @@ def _component_label(component: _PlotComponent) -> str:
     Returns
     -------
     str
-        ``"Real"`` for ``"re"`` and ``"Imaginary"`` for ``"im"``.
+        `"Real"` for `"re"` and `"Imaginary"` for `"im"`.
     """
 
     return "Real" if component == "re" else "Imaginary"
@@ -253,11 +254,14 @@ def create_first_window_figure(
     *,
     channels: Iterable[int] | None = None,
 ) -> Figure:
-    """Create a figure of the first FFT window of one or more data channels.
+    """Create a figure of the first window of one or more data channels.
 
-    The window length is derived from ``spectrum_config`` and the sampling
-    interval of the selected data channels, using the same frequency
-    resolution logic as the spectrum calculation.
+    The window length is derived from `spectrum_config` and the sampling interval of the selected
+    data channels using:
+
+        window_points = round(1 / (dt * df))
+
+    If `df` was not specified, `window_points` = 1000 is used.
 
     Parameters
     ----------
@@ -265,10 +269,10 @@ def create_first_window_figure(
         Input channels and their shared sampling metadata. Channels may be in-memory arrays or
         HDF5-backed channels.
     spectrum_config : :class:`SpectrumConfig`
-        Configuration defining the requested frequency range and number of frequency points.
+        Configuration defining the requested frequency spacing and bounds.
     channels : Iterable[int] | None, optional
-        Indices of the channels to plot. Indices refer to entries in ``data_config.channels``. If
-        ``None``, all available channels are plotted.
+        Indices of the channels to plot. Indices refer to entries in `data_config.channels`. If
+        `None`, all available channels are plotted.
 
     Returns
     -------
@@ -359,7 +363,7 @@ def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
     Returns
     -------
     str
-        Table containing a header and separator followed by the supplied rows. If ``rows`` is empty,
+        Table containing a header and separator followed by the supplied rows. If `rows` is empty,
         only the header and separator are returned.
     """
 
@@ -596,7 +600,7 @@ def create_spectrum_figure(result: SpectrumResult, plot_style: PlotStyle) -> Spe
     Raises
     ------
     ValueError
-        If ``result`` is not an order-2, order-3, or order-4 spectrum.
+        If `result` is not an order-2, order-3, or order-4 spectrum.
     """
 
     if result.order == 2:

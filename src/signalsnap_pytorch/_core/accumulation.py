@@ -27,15 +27,14 @@ if TYPE_CHECKING:
 class SpectrumAccumulator:
     """Data container for the accumulation of spectral estimates.
 
-    Stores the configuration metadata, accumulated hardware states, error buffers for a specific
+    Stores the configuration metadata, accumulated hardware states, and error buffers for a specific
     higher-order auto- or cross-spectrum calculation.
 
     Attributes
     ----------
     channels : tuple[int, ...]
-        Runtime configuration used by :func:`signalsnap_pytorch.calculate_spectra`.
         The indices identifying which channels are part of this calculation. For example,
-        ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)`` indicates
+        `(0, 0, 0)` indicates a third-order auto-spectrum on channel 0, while `(0, 1)` indicates
         a cross-spectrum between channels 0 and 1.
     freq : np.ndarray
         Frequency axis associated with the spectrum.
@@ -55,11 +54,11 @@ class SpectrumAccumulator:
         interlacing is enabled.
     chunks_unshifted : int
         The total number of individual unshifted spectral estimates integrated into
-        ``spectrum_sum_unshifted``.
+        `spectrum_sum_unshifted`.
     chunks_shifted : int
         The total number of individual shifted spectral estimates integrated into
-        ``spectrum_sum_shifted``. When interlacing is enabled, this count never exceeds
-        ``chunks_unshifted``.
+        `spectrum_sum_shifted`. When interlacing is enabled, this count never exceeds
+        `chunks_unshifted`.
     """
 
     channels: tuple[int, ...]
@@ -84,7 +83,7 @@ class SpectrumAccumulatorStore:
     """Container for all :class:`SpectrumAccumulator` used by a calculation pipeline.
 
     Stores one :class:`SpectrumAccumulator` per channel tuple. Accumulators are indexed by
-    ``channels``, where ``channels`` is a tuple of data-channel indices.
+    `channels`, where `channels` is a tuple of data-channel indices.
 
     This class owns collection-level bookkeeping only. Numerical accumulation, error estimation, and
     finalization are handled elsewhere.
@@ -92,8 +91,8 @@ class SpectrumAccumulatorStore:
     Attributes
     ----------
     accumulators : dict[tuple[int, ...], SpectrumAccumulator]
-        Mapping from ``channels`` to the corresponding :class:`SpectrumAccumulator`. For example,
-        ``(0, 0)`` identifies the second-order auto-spectrum of channel 0, while ``(0, 1)``
+        Mapping from `channels` to the corresponding :class:`SpectrumAccumulator`. For example,
+        `(0, 0)` identifies the second-order auto-spectrum of channel 0, while `(0, 1)`
         identifies a second-order cross-spectrum between channels 0 and 1.
     """
 

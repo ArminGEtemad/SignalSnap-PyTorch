@@ -48,7 +48,7 @@ This example turns the last-axis entries `0` and `1` into separate SignalSnap ch
 - Slice steps other than `1` are not supported.
 - A selection may leave at most two dataset dimensions unfixed.
 - Remaining dimensions are flattened in C/row-major order.
-- The resulting channel must be nonempty, real, and numeric.
+- The resulting channel must be nonempty and contain real-valued numeric or Boolean data.
 - All active channels must contain the same number of selected samples.
 
 ## Mixing storage types

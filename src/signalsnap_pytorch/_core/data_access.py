@@ -253,9 +253,9 @@ def _validate_hdf5_dataset(file: h5py.File, channel: HDF5Channel) -> h5py.Datase
 
     if not isinstance(dataset, h5py.Dataset):
         raise TypeError(f"HDF5 path {channel.dataset!r} is not a dataset.")
-    
+
     dataset = cast("h5py.Dataset", dataset)
-    
+
     if np.issubdtype(dataset.dtype, np.complexfloating):
         raise TypeError("Complex HDF5 datasets are not supported.")
 

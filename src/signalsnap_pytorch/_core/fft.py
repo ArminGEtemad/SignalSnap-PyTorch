@@ -83,6 +83,13 @@ class WindowBuffer:
     """
     Stores all information related to the window function, so these dont need to be computed
     repeatedly.
+
+    Attributes
+    ----------
+    window : Tensor
+        Has shape `(N,)` where `N = runtime.window_points`.
+    norm_all_orders : tuple[Tensor, Tensor, Tensor, Tensor]
+        Stores the norm at all orders.
     """
 
     window: Tensor
@@ -153,22 +160,22 @@ def _acg_window(
 def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor:
     """Window a signal chunk and compute its Fourier coefficients.
 
-    ``coeffs`` is computed via the ifft with forward normalization, since the SignalSnap paper uses
+    `coeffs` is computed via the ifft with forward normalization, since the SignalSnap paper uses
     the opposite sign convention for the Fourier transform compared to pytorch.
 
     Parameters
     ----------
     chunk : Tensor
-        Real-valued signal chunk with shape ``(m, N)``.
+        Real-valued signal chunk with shape `(m, N)`.
     window : Tensor
-        Window tensor with shape ``(N,)``.
+        Window tensor with shape `(N,)`.
     runtime : RuntimeConfig
         Runtime settings defining FFT mode, sample spacing, and dtypes.
 
     Returns
     -------
     Tensor
-        Complex Fourier coefficients scaled by ``runtime.dt``. The shape is ``(m, N)``.
+        Complex Fourier coefficients scaled by `runtime.dt`. The shape is `(m, N)`.
     """
 
     coeffs = torch.fft.ifft(window * chunk, dim=1, norm="forward")
@@ -180,12 +187,16 @@ def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor
 def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
     """Build the window tensors used for each spectral estimate.
 
+    Parameters
+    ----------
+    runtime : :class:`RuntimeConfig`
+        Runtime parameters resolved from the user configs.
+
     Returns
     -------
     WindowBuffer
-        ``single_window`` has shape ``(N,)`` where ``N = runtime.window_points``.
-        ``repeated_window`` has shape ``(m, N, 1)`` where ``m = runtime.m`` and is shaped to
-        multiply directly with reshaped signal chunks.
+        `window` has shape `(N,)` where `N = runtime.window_points`. `norm_all_orders` stores the
+        norm at all orders.
     """
 
     if runtime.old_window:
@@ -219,13 +230,13 @@ def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarra
     Parameters
     ----------
     chunk : np.ndarray
-        One-dimensional signal slice with shape ``(m * N,)``, where ``m = runtime.m`` and
-        ``N = runtime.window_points``.
+        One-dimensional signal slice with shape `(m * N,)`, where `m = runtime.m` and
+        `N = runtime.window_points`.
 
     Returns
     -------
     np.ndarray
-        Reshaped chunk with shape ``(m, N)``.
+        Reshaped chunk with shape `(m, N)`.
     """
 
     expected_size = runtime.window_points * runtime.m
@@ -240,7 +251,7 @@ def to_device(array: np.ndarray, runtime: RuntimeConfig) -> Tensor:
     """Convert a NumPy array to a torch tensor using the runtime dtype and device.
 
     The input shape is preserved. In the main calculation pipeline this is typically called with a
-    reshaped signal chunk of shape ``(m, N)``.
+    reshaped signal chunk of shape `(m, N)`.
     """
 
     return torch.as_tensor(array, dtype=runtime.real_dtype, device=runtime.device)
