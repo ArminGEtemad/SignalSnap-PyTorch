@@ -41,16 +41,16 @@ SignalSnap estimates these spectra from finite, real measurement traces as descr
 
 Assume a signal $z(t)$ is known at $N$ equidistant points in a timespan $T$. We define:
 
-```math
+$$
 z_i = z(iT/N), \quad \text{with} \quad 0 \leq i \le N-1.
-```
+$$
 
 Using a window function $g_i$ to improve the spectral resolution, we can write the discrete Fourier
 transform as:
 
-```math
+$$
 a_k = \frac{T}{N} \sum_{i=0}^{N-1} g_i z_i e^{2\pi \mathrm{j} i k/N}, \quad \text{with} \quad 0 \leq k \le N-1.
-```
+$$
 
 SignalSnap uses the approximate confined Gaussian window
 derived by [Starosielec and Hägele](https://doi.org/10.1016/j.sigpro.2014.03.033) as its window
@@ -61,37 +61,37 @@ SignalSnap takes the input channels provided by the user and splits each channel
 are computed and used to estimate polyspectra based on the following formulas (here, $z_i$ no longer
 denotes the different samples of one channel, but different channels):
 
-```math
-\begin{aligned}
+$$
+\begin{alignedat}{1}
 S_{z_1}^{(1)} & \approx \frac{N C_1(a_0)}{T \sum_{i=0}^{N-1}g_i}, \quad \text{with:} \quad C_1(x) = \langle x\rangle\\
 S_{z_1,z_2}^{(2)}(\omega_k) & \approx \frac{N C_2(a_k, b_k^\ast)}{T \sum_{i=0}^{N-1}g_i g_i^\ast}\\
 S_{z_1,z_2,z_3}^{(3)}(\omega_k, \omega_l) & \approx \frac{N C_3(a_k, b_l, c_{k+l}^\ast)}{T \sum_{i=0}^{N-1}g_i^2 g_i^\ast}\\
 S_{z_1,z_2,z_3,z_4}^{(4)}(\omega_k, \omega_l) & \approx \frac{N C_4(a_k, b_k^\ast, c_l, d_l^\ast)}{T \sum_{i=0}^{N-1}g_i^3 g_i^\ast}\\
-\end{aligned}
-```
+\end{alignedat}
+$$
 
 where $S_{z_1,z_2,z_3,z_4}^{(4)}(\omega_k, \omega_l)$ is a two-dimensional slice of the full
 trispectrum:
 
-```math
+$$
 S_{z_1,z_2,z_3,z_4}^{(4)}(\omega_k, \omega_l, \omega_p) \approx \frac{N C_4(a_k, b_l, c_p, d_{k+l+p}^\ast)}{T \sum_{i=0}^{N-1}g_i^3 g_i^\ast}.
-```
+$$
 
 $a_k$ denotes the Fourier coefficients of the first channel, $b_k$ the coefficients of the second
 channel, and so on. The $C_1(\ldots), \ldots, C_4(\ldots)$ must be estimated from finite data.
 SignalSnap implements unbiased, finite-sample, multivariate cumulant estimators derived by
 [Schefczik and Hägele](https://arxiv.org/abs/1904.12154):
 
-```math
-\begin{aligned}
+$$
+\begin{alignedat}{1}
 c_2(x, y) &= \frac{m}{m-1} (\overline{xy} - \overline{x}\,\overline{y}) = \frac{m}{m-1}\overline{(x-\overline{x})(y-\overline{y})}\\
 c_3(x, y, z) &= \frac{m^2}{(m-1)(m-2)}\overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})}\\
 c_4(x, y, z, w) &= \frac{m^2}{(m-1)(m-2)(m-3)} \times \biggl[(m+1) \times \overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})(w-\overline{w})}\\
 &\qquad\qquad\qquad\qquad\qquad\qquad{}- (m-1) \times \Bigl(\overline{(x-\overline{x})(y-\overline{y})} \times \overline{(z-\overline{z})(w-\overline{w})}\\
 &\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(z-\overline{z})} \times \overline{(y-\overline{y})(w-\overline{w})}\\
 &\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(w-\overline{w})} \times \overline{(y-\overline{y})(z-\overline{z})}\Bigr)\biggr]
-\end{aligned}
-```
+\end{alignedat}
+$$
 
 They take the Fourier-coefficient vectors from `m` different windows and treat them as samples for
 a multivariate k-statistic. Each slice of `m` windows produces one spectral estimate provided by

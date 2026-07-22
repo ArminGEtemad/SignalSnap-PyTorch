@@ -20,10 +20,10 @@ pipeline.
 `SpectrumConfig.spectrum_size` has been replaced by `SpectrumConfig.df`. To preserve the
 requested spacing of an existing configuration, convert it with:
 
-```math
+$$
 df = \frac{f_\mathrm{max}-f_\mathrm{min}}
            {\mathrm{spectrum\_size}-1}.
-```
+$$
 
 For example, `f_min=0`, `f_max=0.5`, and `spectrum_size=9` become `df=0.0625`.
 

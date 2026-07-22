@@ -61,16 +61,16 @@ the result.
 SignalSnap does not attach amplitude units to channels. If channel $k$ has amplitude unit $X_k$,
 an order-$n$ spectrum has units
 
-```math
+$$
 \left(\prod_{k=1}^{n} X_k \right)\mathrm{t\_unit}^{n-1}
-```
+$$
 
 or equivalently
 
 
-```math
+$$
 \left(\prod_{k=1}^{n} X_k \right)\mathrm{freq\_unit}^{1-n}.
-```
+$$
 
 `freq_unit` is the inverse-time unit corresponding to the `t_unit` supplied in `DataConfig`.
 
