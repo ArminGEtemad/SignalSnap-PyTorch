@@ -83,14 +83,78 @@ SignalSnap implements unbiased, finite-sample, multivariate cumulant estimators 
 [Schefczik and Hägele](https://arxiv.org/abs/1904.12154):
 
 $$
-\begin{alignedat}{1}
-c_2(x, y) &= \frac{m}{m-1} (\overline{xy} - \overline{x}\,\overline{y}) = \frac{m}{m-1}\overline{(x-\overline{x})(y-\overline{y})}\\
-c_3(x, y, z) &= \frac{m^2}{(m-1)(m-2)}\overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})}\\
-c_4(x, y, z, w) &= \frac{m^2}{(m-1)(m-2)(m-3)} \times \biggl[(m+1) \times \overline{(x-\overline{x})(y-\overline{y})(z-\overline{z})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\qquad\qquad{}- (m-1) \times \Bigl(\overline{(x-\overline{x})(y-\overline{y})} \times \overline{(z-\overline{z})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(z-\overline{z})} \times \overline{(y-\overline{y})(w-\overline{w})}\\
-&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\,\qquad\quad{}+ \overline{(x-\overline{x})(w-\overline{w})} \times \overline{(y-\overline{y})(z-\overline{z})}\Bigr)\biggr]
-\end{alignedat}
+\begin{array}{r@{\;}c@{\;}l}
+c_2(x,y)
+&=&
+\dfrac{m}{m-1}
+\left(
+  \overline{xy}
+  -\overline{x}\,\overline{y}
+\right) = 
+\dfrac{m}{m-1}
+\overline{
+  (x-\mathord{\overline{x}})
+  (y-\mathord{\overline{y}})
+}
+\\[8pt]
+
+c_3(x,y,z)
+&=&
+\dfrac{m^2}{(m-1)(m-2)}
+\overline{
+  (x-\mathord{\overline{x}})
+  (y-\mathord{\overline{y}})
+  (z-\mathord{\overline{z}})
+}
+\\[8pt]
+
+c_4(x,y,z,w)
+&=&
+\dfrac{m^2}{(m-1)(m-2)(m-3)}
+\Biggl[
+  (m+1) \cdot
+  \overline{
+    (x-\mathord{\overline{x}})
+    (y-\mathord{\overline{y}})
+    (z-\mathord{\overline{z}})
+    (w-\mathord{\overline{w}})
+  }
+\\[4pt]
+&&
+\qquad\qquad\qquad\qquad\qquad{}-(m-1) \cdot \Biggl(
+  \overline{
+    (x-\mathord{\overline{x}})
+    (y-\mathord{\overline{y}})
+  }\cdot
+  \overline{
+    (z-\mathord{\overline{z}})
+    (w-\mathord{\overline{w}})
+  }
+\\[4pt]
+&&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\quad{}
+  +
+  \overline{
+    (x-\mathord{\overline{x}})
+    (z-\mathord{\overline{z}})
+  }\cdot
+  \overline{
+    (y-\mathord{\overline{y}})
+    (w-\mathord{\overline{w}})
+  }
+\\[4pt]
+&&\qquad\qquad\qquad\qquad\qquad\qquad\qquad\quad{}
+  +
+  \overline{
+    (x-\mathord{\overline{x}})
+    (w-\mathord{\overline{w}})
+  }\cdot
+  \overline{
+    (y-\mathord{\overline{y}})
+    (z-\mathord{\overline{z}})
+  }
+  \Biggr)
+\Biggr].
+\end{array}
 $$
 
 They take the Fourier-coefficient vectors from `m` different windows and treat them as samples for
