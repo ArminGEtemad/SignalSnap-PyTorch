@@ -55,17 +55,17 @@ Configuration objects are immutable and reject unknown fields.
 `df` specifies the requested frequency spacing. Together with the sampling interval `dt`, it
 determines the FFT window length:
 
-$$
+```math
 \mathrm{window\_points} = \mathrm{round}\left(\frac{1}{\mathrm{dt} \cdot \mathrm{df}}\right).
-$$
+```
 
 Because the window length must be an integer, the actual frequency spacing can differ slightly from
 the requested value:
 
-$$
+```math
 \mathrm{df}_\mathrm{actual}
 = \frac{1}{\mathrm{dt} \cdot \mathrm{window\_points}}.
-$$
+```
 
 If `df` is omitted, `window_points` defaults to 1000 samples. Use `result.freq` as the authoritative
 frequency axis.
