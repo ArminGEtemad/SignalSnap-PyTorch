@@ -22,32 +22,35 @@ class SpectrumResult:
     Stores the configuration metadata, and final computed results for a specific higher-order auto-
     or cross-spectrum calculation.
 
-    Example: S^3(frequency[i], frequency[j]) would be stored in `SpectrumResult.spectrum[i, j]`.
+    For an order-three result, ``spectrum[i, j]`` represents the frequency tuple
+    ``(freq[i], freq[j], -(freq[i] + freq[j]))``. Entries for which the implied third frequency is
+    outside the FFT support are ``NaN``. An order-four result contains the diagonal slice
+    ``(freq[i], -freq[i], freq[j], -freq[j])`` rather than the full trispectrum.
 
     Attributes
     ----------
     channels : tuple[int, ...]
         The indices identifying which channels are part of this calculation. For example,
-        `(0, 0, 0)` indicates a third-order auto-spectrum on channel 0, while `(0, 1)` indicates a
-        cross-spectrum between channels 0 and 1.
+        ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)``
+        indicates a cross-spectrum between channels 0 and 1.
     freq : np.ndarray
-        Frequency axis associated with the spectrum. For first-order spectra `freq = [0]`.
+        Frequency axis associated with the spectrum. For first-order spectra, ``freq = [0]``.
     freq_unit : Literal["Hz", "kHz", "MHz", "GHz", "THz"]
         Unit of the frequency axis.
     spectrum : np.ndarray
-        The final normalized spectral values transferred back to the CPU. For `F = len(freq)`, the
-        result shapes are `(1,)` for first-order, `(F,)` for second-order, and `(F, F)` for third-
-        and fourth-order results.
+        The final normalized spectral values transferred back to the CPU. For ``F = len(freq)``, the
+        result shapes are ``(1,)`` for first-order, ``(F,)`` for second-order, and ``(F, F)`` for
+        third- and fourth-order results.
     spectrum_error : np.ndarray | None
         The final calculated standard error of the mean (SEM) values transferred back to the CPU.
-        `spectrum_error` has the same shape as `spectrum`. Its real and imaginary components
+        ``spectrum_error`` has the same shape as ``spectrum``. Its real and imaginary components
         independently store the standard errors of the corresponding spectrum components; the
-        complex values themselves have no statistical interpretation. At least two spectral
-        estimates need to be available to compute the error, stores `None` otherwise. If interlacing
-        was enabled, this is the component-wise maximum of the unshifted and shifted spectrum error,
-        where standard errors are computed separately for unshifted and shifted groups. A group
-        contributes only when it contains at least two estimates. If neither group qualifies, this
-        is None; if only the unshifted group qualifies, its error is used.
+        complex values themselves have no statistical interpretation. At least two estimates are
+        needed to compute an error; this is ``None`` otherwise. If interlacing was enabled, this is
+        the component-wise maximum of the unshifted and shifted spectrum error, where standard
+        errors are computed separately for unshifted and shifted groups. A group contributes only
+        when it contains at least two estimates. If neither group qualifies, this is ``None``; if
+        only the unshifted group qualifies, its error is used.
     """
 
     channels: tuple[int, ...]
@@ -63,6 +66,7 @@ class SpectrumResult:
         return len(self.channels)
 
     def __post_init__(self) -> None:
+        """Validate the spectrum order, frequency axis, and result-array shapes."""
         if not 1 <= self.order <= 4:
             raise ValueError(f"Unsupported spectrum order {self.order}.")
 
@@ -92,8 +96,8 @@ class SpectrumResult:
 class SpectrumResultStore:
     """Container for all spectrum results produced by a calculation pipeline.
 
-    Stores one :class:`SpectrumResult` per channel tuple. Results are indexed by `channels`, where
-    `channels` is a tuple of data-channel indices.
+    Stores one :class:`SpectrumResult` per channel tuple. Results are indexed by ``channels``, where
+    ``channels`` is a tuple of data-channel indices.
 
     This class owns collection-level bookkeeping only. Numerical accumulation, error estimation, and
     finalization are handled elsewhere.
@@ -101,14 +105,15 @@ class SpectrumResultStore:
     Attributes
     ----------
     results : dict[tuple[int, ...], SpectrumResult]
-        Mapping from `channels` to the corresponding spectrum result. For example, `(0, 0)`
-        identifies the second-order auto-spectrum of channel 0, while `(0, 1)` identifies a
+        Mapping from ``channels`` to the corresponding spectrum result. For example, ``(0, 0)``
+        identifies the second-order auto-spectrum of channel 0, while ``(0, 1)`` identifies a
         second-order cross-spectrum between channels 0 and 1.
     """
 
     results: dict[tuple[int, ...], SpectrumResult] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Validate result value types and agreement between keys and channel metadata."""
         for channels, result in self.results.items():
             if not isinstance(result, SpectrumResult):
                 raise TypeError(
@@ -127,7 +132,7 @@ class SpectrumResultStore:
         return channels in self.results
 
     def __iter__(self) -> Iterator[SpectrumResult]:
-        """Yields values not channel keys in insertion order"""
+        """Iterate over results, rather than channel-tuple keys, in insertion order."""
         return iter(self.results.values())
 
     def __len__(self) -> int:
@@ -135,11 +140,28 @@ class SpectrumResultStore:
         return len(self.results)
 
     def __getitem__(self, channels: tuple[int, ...]) -> SpectrumResult:
-        """Return a result for a channel tuple."""
+        """Return the result for a channel tuple.
+
+        Raises
+        ------
+        KeyError
+            If no result exists for ``channels``.
+        """
         return self.results[channels]
 
     def add(self, result: SpectrumResult) -> None:
-        """Add or replace a spectrum result using its channels."""
+        """Add a result, replacing an existing result with the same channels.
+
+        Parameters
+        ----------
+        result : SpectrumResult
+            Result stored under its ``result.channels`` tuple.
+
+        Raises
+        ------
+        TypeError
+            If ``result`` is not a :class:`SpectrumResult`.
+        """
         if not isinstance(result, SpectrumResult):
             raise TypeError(
                 "SpectrumResultStore only accepts SpectrumResult objects; "
@@ -151,7 +173,22 @@ class SpectrumResultStore:
     def select(self, channels: Iterable[tuple[int, ...]]) -> SpectrumResultStore:
         """Return a new store containing the selected results.
 
-        The new store shares its SpectrumResult objects with this store.
+        The new store shares its :class:`SpectrumResult` objects and their arrays with this store.
+
+        Parameters
+        ----------
+        channels : Iterable[tuple[int, ...]]
+            Channel tuples to include, in the desired output order.
+
+        Returns
+        -------
+        SpectrumResultStore
+            New store containing the selected results.
+
+        Raises
+        ------
+        ValueError
+            If any requested channel tuple is absent.
         """
         selected: dict[tuple[int, ...], SpectrumResult] = {}
 
@@ -169,6 +206,23 @@ class SpectrumResultStore:
         """Return all results with the specified spectrum order.
 
         An empty store is returned when no matching results exist.
+
+        Parameters
+        ----------
+        order : int
+            Spectrum order from 1 through 4. NumPy integers are accepted; Booleans are rejected.
+
+        Returns
+        -------
+        SpectrumResultStore
+            New store containing matching results in their original order.
+
+        Raises
+        ------
+        TypeError
+            If ``order`` is not an integer.
+        ValueError
+            If ``order`` is outside the range 1 through 4.
         """
         if isinstance(order, (bool, np.bool_)) or not isinstance(order, (int, np.integer)):
             raise TypeError("order must be an integer.")
@@ -183,8 +237,25 @@ class SpectrumResultStore:
     def select_by_channel(self, channel: int) -> SpectrumResultStore:
         """Return all results involving the specified data channel.
 
-        A result matches when `channel` occurs anywhere in its channel tuple. An empty store is
+        A result matches when ``channel`` occurs anywhere in its channel tuple. An empty store is
         returned when no matching results exist.
+
+        Parameters
+        ----------
+        channel : int
+            Nonnegative channel index. NumPy integers are accepted; Booleans are rejected.
+
+        Returns
+        -------
+        SpectrumResultStore
+            New store containing matching results in their original order.
+
+        Raises
+        ------
+        TypeError
+            If ``channel`` is not an integer.
+        ValueError
+            If ``channel`` is negative.
         """
         if isinstance(channel, (bool, np.bool_)) or not isinstance(channel, (int, np.integer)):
             raise TypeError("channel must be an integer.")

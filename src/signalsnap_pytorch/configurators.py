@@ -25,8 +25,8 @@ class DataConfig(BaseModel):
     These settings are later resolved together with :class:`SpectrumConfig` into the internal
     runtime configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
-    Together with `df` from :class:`SpectrumConfig`, `dt` will be used to determine the number of
-    data points (`window_points`) used for each Fourier transform:
+    Together with ``df`` from :class:`SpectrumConfig`, ``dt`` will be used to determine the number
+    of data points (``window_points``) used for each Fourier transform:
 
         window_points = round(1 / (dt * df))
 
@@ -34,7 +34,7 @@ class DataConfig(BaseModel):
 
         f_nyquist = 1 / (2 * dt)
 
-    If `df` is not specified in :class:`SpectrumConfig`, `window_points` will be set to `1000`.
+    If ``df`` is not specified in :class:`SpectrumConfig`, ``window_points`` is set to ``1000``.
 
     Attributes
     ----------
@@ -45,7 +45,7 @@ class DataConfig(BaseModel):
     dt : float
         The time interval between two consecutive data points. Must be positive.
     t_unit : Literal["s", "ms", "us", "ns", "ps"]
-        Unit of the time step. Defaults to `"s"`.
+        Unit of the time step. Defaults to ``"s"``.
     """
 
     model_config = _SHARED_CONFIG
@@ -57,6 +57,7 @@ class DataConfig(BaseModel):
     @field_validator("channels")
     @classmethod
     def validate_channels(cls, channels: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Validate the shape and dtype of in-memory channels."""
         for index, channel in enumerate(channels):
             if isinstance(channel, HDF5Channel):
                 continue
@@ -120,6 +121,7 @@ class HDF5Channel(BaseModel):
     @field_validator("dataset")
     @classmethod
     def validate_dataset(cls, value: str) -> str:
+        """Reject an empty HDF5 dataset path."""
         if not value:
             raise ValueError("dataset cannot be empty.")
         return value
@@ -127,6 +129,7 @@ class HDF5Channel(BaseModel):
     @field_validator("selection")
     @classmethod
     def validate_selection(cls, value: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Validate selector syntax and normalize NumPy integer components."""
         if not value:
             raise ValueError("selection cannot be empty.")
 
@@ -188,13 +191,13 @@ class SpectrumConfig(BaseModel):
     These settings are later resolved together with :class:`DataConfig` into the internal runtime
     configuration used by :func:`~signalsnap_pytorch.calculate_spectra`.
 
-    `df` is the REQUESTED frequency spacing. Note, that the discrete Fourier transform cannot result
-    in arbitrary frequency spacings with a given sample spacing `dt` from :class:`DataConfig`. They
+    ``df`` is the requested frequency spacing. The discrete Fourier transform cannot result in
+    arbitrary frequency spacings with a given sample spacing ``dt`` from :class:`DataConfig`. They
     are related via:
 
         window_points = round(1 / (dt * df)),
 
-    where `window_points` is the number of samples used for each DFT. The calculation will use the
+    where ``window_points`` is the number of samples used for each DFT. The calculation uses the
     closest available frequency spacing. Check the frequency axis of the
     :class:`~signalsnap_pytorch.results.SpectrumResult` to see the true frequencies.
 
@@ -202,26 +205,26 @@ class SpectrumConfig(BaseModel):
     ----------
     df : float | None
         Requested frequency spacing in the specified frequency range. Must be positive. If omitted,
-        `window_points` will be set to 1000.
+        ``window_points`` is set to 1000.
     f_min : float = 0.0
         Lower frequency bound. If omitted, zero is used.
     f_max : float | None = None
         Upper frequency bound. If omitted, the Nyquist frequency based on :class:`DataConfig`'s
-        `dt` is used.
+        ``dt`` is used.
     m : int = 10
         Number of windows used per spectral estimate. This may be reduced at runtime if the signal
         is too short. Must be at least as high as the highest requested order. Must be positive.
     device : str = "cpu"
-        Torch device requested for calculation. Can be `"cpu"`, `"cuda"`, `"cuda:N"`, `"mps"`,
-        `"xpu"`, or `"xpu:N"`.
+        Torch device requested for calculation. Can be ``"cpu"``, ``"cuda"``, ``"cuda:N"``,
+        ``"mps"``, ``"xpu"``, or ``"xpu:N"``.
     precision : Literal["auto", "single", "double"] = "auto"
-        Floating point precision. `single` will result in `float32` and `complex64`. `double` will
-        result in `float64` and `complex128`. `auto` will choose `single` if device is `mps` or
-        `xpu` and `double` if device is `cpu` or `cuda`.
+        Floating point precision. ``"single"`` uses ``float32`` and ``complex64``; ``"double"``
+        uses ``float64`` and ``complex128``. ``"auto"`` chooses ``"single"`` for MPS or XPU and
+        ``"double"`` for CPU or CUDA.
     spectral_estimates_max : int | None = int(1e6)
-        Maximum number of unshifted spectral estimates. If `None`, as many estimates as possible
+        Maximum number of unshifted spectral estimates. If ``None``, as many estimates as possible
         are calculated based on the data. The true number of spectral estimates may be lower if the
-        data does not have enough samples. If `interlacing=True`, up to the same number of
+        data does not have enough samples. If ``interlacing=True``, up to the same number of
         additional shifted estimates are calculated. The number of shifted estimates may also be one
         less than the number of unshifted estimates if the final shifted windows do not fit. Must be
         positive.
@@ -229,9 +232,10 @@ class SpectrumConfig(BaseModel):
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
         window edges. Error estimates are calculated separately for unshifted and shifted spectra;
-        when both are available, the reported error is the component-wise maximum of both estimates.
+        when both are available, the reported error is the component-wise maximum of the two
+        standard-error arrays.
     old_window : bool = False
-        Compatibility option to reproduce legacy results. If set to `True`, the old window
+        Compatibility option to reproduce legacy results. If set to ``True``, the old window
         function from the old API is used as a window function.
     """
 
@@ -250,6 +254,7 @@ class SpectrumConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_limits(self) -> SpectrumConfig:
+        """Require the lower frequency bound to precede an explicit upper bound."""
         if self.f_max is not None:
             if self.f_min >= self.f_max:
                 raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")

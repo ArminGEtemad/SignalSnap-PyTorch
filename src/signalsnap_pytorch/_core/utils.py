@@ -18,7 +18,23 @@ PlotComponent: TypeAlias = Literal["re", "im"]
 
 
 def unit_conversion_time_to_freq(t_unit: TimeUnits) -> FrequencyUnits:
-    """Return the frequency unit corresponding to a time-step unit."""
+    """Return the frequency unit corresponding to a time-step unit.
+
+    Parameters
+    ----------
+    t_unit : Literal["s", "ms", "us", "ns", "ps"]
+        Unit used for the sampling interval.
+
+    Returns
+    -------
+    Literal["Hz", "kHz", "MHz", "GHz", "THz"]
+        Reciprocal frequency unit with the matching SI prefix.
+
+    Raises
+    ------
+    ValueError
+        If ``t_unit`` is unsupported at runtime.
+    """
     mapping: dict[TimeUnits, FrequencyUnits] = {
         "s": "Hz",
         "ms": "kHz",

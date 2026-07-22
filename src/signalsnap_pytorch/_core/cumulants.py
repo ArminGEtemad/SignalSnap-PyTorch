@@ -12,12 +12,20 @@ from torch import Tensor
 
 
 def build_s3_target_indices(axis_indices: Tensor, fft_freq_count: int) -> tuple[Tensor, Tensor]:
-    """Map output-axis bins (w1, w2) to the shifted-FFT bin for w3 = -(w1 + w2).
+    """Map output bins ``(w1, w2)`` to the shifted-FFT bin at ``w3 = -(w1 + w2)``.
 
-    `safe_indices` is a 2D grid based on (w1, w2) which includes the corresponding indices of the
-    shifted fft array for w3. Every w1 + w2 that is out of bounds will receive index 0.
-    `valid_mask` is a 2D grid containing `True` when w1 + w2 is a valid frequency and `False`
-    otherwise, which can later be used to delete any values that were computed out of bounds.
+    Parameters
+    ----------
+    axis_indices : Tensor
+        One-dimensional integer indices for the selected frequency band.
+    fft_freq_count : int
+        Number of bins in the full shifted FFT.
+
+    Returns
+    -------
+    tuple[Tensor, Tensor]
+        Safe target indices and a Boolean validity mask, both with shape ``(F, F)``. Invalid target
+        indices are replaced by zero so they can be gathered before the result is masked.
     """
 
     zero_idx = fft_freq_count // 2
@@ -32,32 +40,60 @@ def build_s3_target_indices(axis_indices: Tensor, fft_freq_count: int) -> tuple[
 
 
 def gather_s3_third_factor(coeffs: Tensor, target_indices: Tensor, m: int) -> Tensor:
-    """Gather a(w3) for w3 = -(w1 + w2), returning shape (m, F, F)."""
+    """Gather coefficients at ``w3 = -(w1 + w2)`` for a third-order cumulant.
+
+    Parameters
+    ----------
+    coeffs : Tensor
+        Full shifted Fourier coefficients with shape ``(m, N)``.
+    target_indices : Tensor
+        Target-bin grid with shape ``(F, F)``.
+    m : int
+        Number of leading windows to gather.
+
+    Returns
+    -------
+    Tensor
+        Gathered coefficients with shape ``(m, F, F)``.
+    """
     return coeffs[:m, target_indices]
 
 
 def _mean_outer(m: int, a: Tensor, b: Tensor) -> Tensor:
-    """
-    Computes the average outer product over the window axis (first axis).
+    """Compute an average outer product over the leading window axis.
 
-    `a` and `b` are Tensors of shape `(m, F)`.
+    Parameters
+    ----------
+    m : int
+        Number of windows represented by the leading tensor dimension.
+    a, b : Tensor
+        Input tensors with shape ``(m, F)``.
 
-    Returns a `(F, F)` Tensor: result[f, g] = (1/m)* sum_i a[i, f] * b[i, g], so for every window
-    with index `i` the `(F, F)` grid is computed and at the end the windows are averaged.
+    Returns
+    -------
+    Tensor
+        Tensor with shape ``(F, F)`` whose entry ``[f, g]`` is
+        ``sum_i(a[i, f] * b[i, g]) / m``.
     """
     return torch.einsum("mf,mg->fg", a, b) / m
 
 
 def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
-    """Second-order cumulant.
+    """Compute the unbiased second-order multivariate cumulant estimate.
 
         C2(x, y) = m/(m-1) * ((x-x.mean)*(y-y.mean)).mean
 
-    `centered_x` and `centered_y` are the Fourier coefficients of the specified user band with
-    the mean (calculated over the m windows) subtracted and have shape `(m, F)`, with
-    `F=runtime.band_end_idx - runtime.band_start_idx`.
+    Parameters
+    ----------
+    m : int
+        Number of windows in the estimate. Must exceed one.
+    centered_x, centered_y : Tensor
+        Centered Fourier coefficients with shape ``(m, F)``.
 
-    Returns a `(F,)` shaped spectrum.
+    Returns
+    -------
+    Tensor
+        Cumulant estimate with shape ``(F,)``.
     """
 
     s2 = m / (m - 1) * torch.mean(centered_x * centered_y, dim=0)
@@ -65,16 +101,23 @@ def c2_factorized(m: int, centered_x: Tensor, centered_y: Tensor) -> Tensor:
 
 
 def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor) -> Tensor:
-    """Third-order cumulant.
+    """Compute the unbiased third-order multivariate cumulant estimate.
 
         C3(x, y, z) = (m^2)/((m-1)(m-2)) * ((x-x.mean)*(y-y.mean)*(z-z.mean)).mean
 
-    `centered_x` and `centered_y` are the Fourier coefficients of the specified user band with
-    the mean (calculated over the m windows) subtracted and have shape `(m, F)`, with
-    `F=runtime.band_end_idx - runtime.band_start_idx`. `centered_z` is the precomputed, centered
-    `(m, F, F)` grid of Fourier coefficients for the third component of the cumulant.
+    Parameters
+    ----------
+    m : int
+        Number of windows in the estimate. Must exceed two.
+    centered_x, centered_y : Tensor
+        Centered Fourier coefficients with shape ``(m, F)``.
+    centered_z : Tensor
+        Centered third-frequency coefficients with shape ``(m, F, F)``.
 
-    Returns a `(F, F)` shaped spectrum.
+    Returns
+    -------
+    Tensor
+        Cumulant estimate with shape ``(F, F)``.
     """
 
     s3 = (
@@ -88,7 +131,7 @@ def c3_factorized(m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Te
 def c4_factorized(
     m: int, centered_x: Tensor, centered_y: Tensor, centered_z: Tensor, centered_w: Tensor
 ) -> Tensor:
-    """Fourth-order cumulant.
+    """Compute the unbiased fourth-order multivariate cumulant estimate.
 
         C4(x, y, z, w) = (m^2)/((m-1)(m-2)(m-3))
                         * ((m+1) * ((x-x.mean)*(y-y.mean)*(z-z.mean)*(w-w.mean)).mean
@@ -99,13 +142,18 @@ def c4_factorized(
                             )
                         )
 
-    `centered_x`, `centered_y`, `centered_z`, and `centered_w` are the Fourier coefficients of the
-    specified user band with the mean (calculated over the m windows) subtracted and have shape
-    `(m, F)`, with `F=runtime.band_end_idx - runtime.band_start_idx`.
+    Parameters
+    ----------
+    m : int
+        Number of windows in the estimate. Must exceed three.
+    centered_x, centered_y, centered_z, centered_w : Tensor
+        Centered Fourier coefficients with shape ``(m, F)``. The ``x`` and ``y`` factors vary along
+        the first output-frequency dimension; ``z`` and ``w`` vary along the second.
 
-    Returns a `(F, F)` shaped spectrum. `centered_x` and `centered_y` are varied in the first
-    component of the result and `centered_z` and `centered_w` are varied in the second component
-    of the result.
+    Returns
+    -------
+    Tensor
+        Cumulant estimate with shape ``(F, F)``.
     """
 
     centered_xy = centered_x * centered_y

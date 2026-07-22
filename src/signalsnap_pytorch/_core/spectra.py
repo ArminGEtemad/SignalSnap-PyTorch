@@ -25,10 +25,16 @@ from .planning import RuntimeConfig
 
 @dataclass(slots=True)
 class ThirdOrderIndexCache:
-    """Describes where the third frequency lies for the corresponding frequency axis used in the
-    calculation.
+    """Cached mapping from output frequency pairs to the implied third frequency.
 
-
+    Attributes
+    ----------
+    target_indices : Tensor
+        Integer tensor with shape ``(F, F)``. Each entry indexes the shifted full FFT at
+        ``w3 = -(w1 + w2)``. Invalid entries contain the safe placeholder index zero.
+    valid_mask : Tensor
+        Boolean tensor with shape ``(F, F)`` identifying entries whose implied third frequency lies
+        within the full FFT support.
     """
 
     target_indices: Tensor
@@ -37,8 +43,15 @@ class ThirdOrderIndexCache:
 
 @dataclass(slots=True)
 class ThirdOrderFactor:
-    """Stores the Fourier coefficients for the third frequency based on the indices in
-    :class:`ThirdOrderIndexCache`.
+    """Prepared third factor for a third-order cumulant.
+
+    Attributes
+    ----------
+    centered_a_w3 : Tensor
+        Centered Fourier coefficients with shape ``(m, F, F)`` gathered at the implied third
+        frequencies.
+    valid_mask : Tensor
+        Boolean validity mask with shape ``(F, F)``.
     """
 
     centered_a_w3: Tensor
@@ -52,14 +65,14 @@ class IntermediateSliceBuffer:
     Attributes
     ----------
     band_start_idx, band_end_idx : int
-        Start and end index (corresponding to `f_min` and `f_max`) of the selected frequency band in
-        the full Fourier coefficients.
+        Start-inclusive and end-exclusive indices selecting the requested band from the shifted
+        full Fourier coefficients.
     m : int
         Number of windows per spectral estimate.
     fft_freq_count : int
         Length of the full Fourier coefficients.
     coeffs_by_channel : dict[int, Tensor]
-        Full Fourier coefficients by channel.
+        Shifted full Fourier coefficients by channel, each with shape ``(m, N)``.
     third_order_cache : :class:`ThirdOrderIndexCache` | None
         Indices of the third frequency for the corresponding frequency axis.
     """
@@ -75,7 +88,20 @@ class IntermediateSliceBuffer:
     _centered_c3_third_factor_by_channel: dict[int, ThirdOrderFactor] = field(default_factory=dict)
 
     def centered_coeffs_by_channel_band(self, channel: int, conjugated: bool = False) -> Tensor:
-        """Returns the centered Fourier coefficients in the specified frequency band"""
+        """Return cached centered coefficients for one channel in the selected band.
+
+        Parameters
+        ----------
+        channel : int
+            Data-channel index present in ``coeffs_by_channel``.
+        conjugated : bool, default=False
+            Return the complex conjugate of the cached coefficients.
+
+        Returns
+        -------
+        Tensor
+            Tensor with shape ``(m, F)`` centered over the window axis.
+        """
         if channel not in self._centered_coeffs_by_channel_band:
             coeffs = self.coeffs_by_channel[channel][:, self.band_start_idx : self.band_end_idx]
             self._centered_coeffs_by_channel_band[channel] = coeffs - torch.mean(coeffs, dim=0)
@@ -86,8 +112,22 @@ class IntermediateSliceBuffer:
             return self._centered_coeffs_by_channel_band[channel]
 
     def centered_c3_third_factor_by_channel(self, channel: int) -> ThirdOrderFactor:
-        """Returns the centered Fourier coefficients for the c3 third factor in the specified
-        frequency band.
+        """Return the cached third-order factor for one channel.
+
+        Parameters
+        ----------
+        channel : int
+            Data-channel index present in ``coeffs_by_channel``.
+
+        Returns
+        -------
+        ThirdOrderFactor
+            Centered coefficients gathered on the ``(w1, w2)`` output grid.
+
+        Raises
+        ------
+        ValueError
+            If no :class:`ThirdOrderIndexCache` was supplied.
         """
         if channel not in self._centered_c3_third_factor_by_channel:
             if self.third_order_cache is None:
@@ -107,6 +147,18 @@ class IntermediateSliceBuffer:
 
 
 def build_third_order_cache(runtime: RuntimeConfig) -> ThirdOrderIndexCache:
+    """Build the frequency-index mapping reused by all third-order spectra.
+
+    Parameters
+    ----------
+    runtime : RuntimeConfig
+        Resolved frequency band, FFT length, and device.
+
+    Returns
+    -------
+    ThirdOrderIndexCache
+        Target indices and validity mask, each with shape ``(F, F)`` on the runtime device.
+    """
     axis_indices = torch.arange(
         runtime.band_start_idx,
         runtime.band_end_idx,
@@ -121,6 +173,22 @@ def build_intermediate_slice_buffer(
     coeffs_by_channel: dict[int, Tensor],
     third_order_cache: ThirdOrderIndexCache | None,
 ) -> IntermediateSliceBuffer:
+    """Create the reusable intermediate buffer for one spectral-estimate slice.
+
+    Parameters
+    ----------
+    runtime : RuntimeConfig
+        Resolved band indices, FFT length, and window count.
+    coeffs_by_channel : dict[int, Tensor]
+        Shifted full Fourier coefficients with shape ``(m, N)`` for each active channel.
+    third_order_cache : ThirdOrderIndexCache | None
+        Shared third-order index mapping, required when an order-three spectrum is requested.
+
+    Returns
+    -------
+    IntermediateSliceBuffer
+        Buffer that lazily caches centered and gathered coefficients.
+    """
     return IntermediateSliceBuffer(
         band_start_idx=runtime.band_start_idx,
         band_end_idx=runtime.band_end_idx,
@@ -145,10 +213,10 @@ def compute_single_spectrum(
     Parameters
     ----------
     channels : tuple[int, ...]
-        Specifies the corresponding channels of the spectra to be computed, e.g. (0, 0, 0) for a
+        Specifies the corresponding channels of the spectrum, e.g. ``(0, 0, 0)`` for a
         third-order auto-spectrum.
     intermediate_buffer : :class:`IntermediateSliceBuffer`
-        Stores the precomputed computed Fourier coefficients and bands for the current slice.
+        Stores the precomputed Fourier coefficients and bands for the current slice.
     window_buffer : :class:`WindowBuffer`
         Stores all information related to the window function.
     runtime : :class:`RuntimeConfig`
@@ -158,9 +226,14 @@ def compute_single_spectrum(
     -------
     Tensor
         Single spectral estimate for the specified spectrum. Output shape depends on order: order 1
-        returns `(1,)`, order 2 returns `(F,)`, and orders 3 and 4 return `(F, F)`, with F being the
-        length of the selected frequency band. Invalid third-order points, where `w3 = -(w1 + w2)`
-        is outside the shifted FFT support, are filled with `NaN`.
+        returns ``(1,)``, order 2 returns ``(F,)``, and orders 3 and 4 return ``(F, F)``, where
+        ``F`` is the selected-band length. Invalid third-order points, where
+        ``w3 = -(w1 + w2)`` lies outside the shifted FFT support, are filled with ``NaN``.
+
+    Raises
+    ------
+    ValueError
+        If the channel tuple does not describe an order-one through order-four spectrum.
     """
     order = len(channels)
 

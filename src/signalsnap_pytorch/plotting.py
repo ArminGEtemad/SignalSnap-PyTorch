@@ -45,19 +45,21 @@ class PlotStyle(BaseModel):
     f_min, f_max : float
         Frequency range displayed in plots. These values only crop the displayed axes and do not
         recalculate or resample the data.
-    sigma : float
+    sigma : float, default=1.0
         Default standard-error level for second-order uncertainty intervals and the insignificance
         threshold for higher-order spectra.
-    uncertainty_levels : list[float] | None
-        Standard-error levels displayed as uncertainty bands for second-order spectra. If `None`, a
-        single band at `sigma` is displayed.
-    arcsinh_ratio : float | None
+    uncertainty_levels : list[float] | None, default=None
+        Positive standard-error levels displayed as uncertainty bands for second-order spectra. If
+        ``None``, a single band at ``sigma`` is displayed. This setting does not affect higher-order
+        significance overlays.
+    arcsinh_ratio : float | None, default=None
         Relative width of the approximately linear region used for arcsinh display scaling. If
-        `None`, no scaling is applied.
-    plot_format : list[Literal["re", "im"]]
-        Spectrum components to plot.
-    insignificance_alpha : float
+        ``None``, no scaling is applied. Scaling applies to orders two through four.
+    plot_format : list[Literal["re", "im"]], default=["re", "im"]
+        Spectrum components to plot. Duplicate components are rejected.
+    insignificance_alpha : float, default=0.8
         Opacity of the overlay marking insignificant values in third- and fourth-order spectra.
+        Must be between zero and one.
     """
 
     model_config = _SHARED_CONFIG
@@ -83,6 +85,7 @@ class PlotStyle(BaseModel):
 
     @model_validator(mode="after")
     def validate_limits(self) -> PlotStyle:
+        """Require the displayed lower frequency bound to precede the upper bound."""
         if self.f_min >= self.f_max:
             raise ValueError(f"f_min ({self.f_min}) must be less than f_max ({self.f_max}).")
         return self
@@ -117,7 +120,7 @@ class SpectrumFigure:
         Returns
         -------
         str
-            Filename in the form `s{order}_channels_{channels}.{extension}`.
+            Filename in the form ``s{order}_channels_{channels}.{extension}``.
         """
 
         channel_label = "_".join(map(str, self.channels))
@@ -137,7 +140,7 @@ def _arcsinh_width(data: np.ndarray, ratio: float) -> float | None:
     Returns
     -------
     float | None
-        Scaling width, or `None` if the data has no finite nonzero values.
+        Scaling width, or ``None`` if the data has no finite nonzero values.
     """
 
     finite = np.asarray(data)[np.isfinite(data)]
@@ -171,7 +174,7 @@ def _component_data(data: np.ndarray, component: _PlotComponent) -> np.ndarray:
     Raises
     ------
     ValueError
-        If `component` is not `"re"` or `"im"`.
+        If ``component`` is not ``"re"`` or ``"im"``.
     """
 
     if component == "re":
@@ -192,7 +195,7 @@ def _component_label(component: _PlotComponent) -> str:
     Returns
     -------
     str
-        `"Real"` for `"re"` and `"Imaginary"` for `"im"`.
+        ``"Real"`` for ``"re"`` and ``"Imaginary"`` for ``"im"``.
     """
 
     return "Real" if component == "re" else "Imaginary"
@@ -256,12 +259,13 @@ def create_first_window_figure(
 ) -> Figure:
     """Create a figure of the first window of one or more data channels.
 
-    The window length is derived from `spectrum_config` and the sampling interval of the selected
+    The window length is derived from ``spectrum_config`` and the sampling interval of the selected
     data channels using:
 
         window_points = round(1 / (dt * df))
 
-    If `df` was not specified, `window_points` = 1000 is used.
+    If ``df`` was not specified, ``window_points = 1000`` is used. The plotted values are the raw,
+    unwindowed samples; the calculation's window function is not applied.
 
     Parameters
     ----------
@@ -271,8 +275,8 @@ def create_first_window_figure(
     spectrum_config : :class:`SpectrumConfig`
         Configuration defining the requested frequency spacing and bounds.
     channels : Iterable[int] | None, optional
-        Indices of the channels to plot. Indices refer to entries in `data_config.channels`. If
-        `None`, all available channels are plotted.
+        Indices of the channels to plot. Indices refer to entries in ``data_config.channels``. If
+        ``None``, all available channels are plotted.
 
     Returns
     -------
@@ -282,7 +286,8 @@ def create_first_window_figure(
     Raises
     ------
     ValueError
-        If a channel index is invalid or if a channel is shorter than one window.
+        If no channels are selected, an index is invalid or duplicated, a channel is shorter than
+        one window, or the configured frequency bounds are invalid.
     TypeError
         If a channel index is not an integer.
     """
@@ -363,7 +368,7 @@ def _format_order_1_rows(rows: list[dict[str, object]]) -> str:
     Returns
     -------
     str
-        Table containing a header and separator followed by the supplied rows. If `rows` is empty,
+        Table containing a header and separator followed by the supplied rows. If ``rows`` is empty,
         only the header and separator are returned.
     """
 
@@ -600,7 +605,7 @@ def create_spectrum_figure(result: SpectrumResult, plot_style: PlotStyle) -> Spe
     Raises
     ------
     ValueError
-        If `result` is not an order-2, order-3, or order-4 spectrum.
+        If ``result`` is not an order-2, order-3, or order-4 spectrum.
     """
 
     if result.order == 2:
@@ -676,6 +681,12 @@ def save_figures(
     -------
     list[Path]
         Paths of the saved figures in input iteration order.
+
+    Notes
+    -----
+    Existing files with generated names are overwritten according to Matplotlib's normal
+    ``savefig`` behavior. Multiple inputs that generate the same filename therefore target the
+    same output path.
     """
 
     output_folder = Path(output_folder)

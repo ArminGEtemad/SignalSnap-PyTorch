@@ -25,7 +25,7 @@ from .utils import ChannelIndex, FrequencyUnits, TimeUnits, unit_conversion_time
 class RuntimeConfig:
     """Resolved calculation settings derived from user configuration.
 
-    :class:`SpectrumConfig` and :class:`DataConfig` describe what the user asked for
+    :class:`SpectrumConfig` and :class:`DataConfig` describe what the user asked for;
     :class:`RuntimeConfig` describes what the calculation will actually use after defaults,
     data-size constraints, frequency axes, and device details have been resolved.
 
@@ -63,14 +63,14 @@ class RuntimeConfig:
         Torch device used for calculation.
     spectral_estimates: int
         Number of unshifted spectral estimates processed by the base calculation. If
-        `interlacing=True`, up to the same number of additional shifted estimates are calculated
+        ``interlacing=True``, up to the same number of additional shifted estimates are calculated
         when enough data is available.
     interlacing : bool
         Compute additional spectral estimates for windows shifted by half a window size, to
         compensate the low weight of data points produced by the window function near the original
         window edges.
     old_window : bool
-        Compatibility option. If set to `True`, the approximated confined Gaussian window from the
+        Compatibility option. If set to ``True``, the approximated confined Gaussian window from the
         old API is used as a window function.
     """
 
@@ -97,8 +97,8 @@ class RuntimeConfig:
 def _resolve_device(device_name: str) -> torch.device:
     """Validate and resolve a requested PyTorch device.
 
-    Supported examples are `"cpu"`, `"cuda"`, `"cuda:0"`, `"cuda:1"`, `"mps"`, `"xpu"`, and
-    `"xpu:0"`.
+    Supported examples are ``"cpu"``, ``"cuda"``, ``"cuda:0"``, ``"cuda:1"``, ``"mps"``,
+    ``"xpu"``, and ``"xpu:0"``.
     """
     try:
         device = torch.device(device_name)
@@ -171,7 +171,27 @@ def _resolve_device(device_name: str) -> torch.device:
 
 
 def normalize_channel_index(channel: object, channel_count: int) -> int:
-    """Validate and normalize one data-channel index."""
+    """Validate and normalize one data-channel index.
+
+    Parameters
+    ----------
+    channel : object
+        Candidate integer index. NumPy integers are accepted; Booleans are rejected.
+    channel_count : int
+        Number of available channels.
+
+    Returns
+    -------
+    int
+        Normalized built-in integer index.
+
+    Raises
+    ------
+    TypeError
+        If ``channel`` is not an integer or is Boolean.
+    ValueError
+        If ``channel`` is negative or outside the available channel range.
+    """
 
     if isinstance(channel, (bool, np.bool_)):
         raise TypeError(f"Channel indices must be integers; received {channel!r}.")
@@ -198,8 +218,29 @@ def resolve_channels(
 ) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
     """Validate and normalize the requested spectra.
 
-    If requested_spectra is None, generate auto-correlation spectra of
+    If ``requested_spectra`` is ``None``, generate auto-spectra of
     orders one through four for every available data channel.
+
+    Parameters
+    ----------
+    requested_spectra : list[tuple[int, ...]] | None
+        Explicit order-one through order-four channel tuples, or ``None`` for all default
+        auto-spectra.
+    channel_count : int
+        Number of available input channels.
+
+    Returns
+    -------
+    tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]
+        Normalized spectrum requests and unique active data channels in first-use order.
+
+    Raises
+    ------
+    TypeError
+        If a request is not a tuple or contains a non-integer channel index.
+    ValueError
+        If no channels or requests are supplied, an order or index is invalid, or a request is
+        duplicated.
     """
     if channel_count < 1:
         raise ValueError("At least one data channel is required.")
@@ -252,7 +293,10 @@ def _get_and_validate_selected_channels(
     data_config: DataConfig,
     opened_channels: Mapping[int, RuntimeChannel],
 ) -> tuple[tuple[int, ...], int, float, TimeUnits]:
-    """Resolve selected data-channel indices and validate the corresponding data."""
+    """Resolve active channels and require them to have equal sample counts.
+
+    Returns the active indices, common sample count, sampling interval, and time unit.
+    """
 
     active_data_channels = tuple(opened_channels)
     first_channel = active_data_channels[0]
@@ -285,7 +329,14 @@ def resolve_frequencies(
     Returns
     -------
     tuple[int, NDArray[np.floating[Any]], int, int]
-        Includes resolved window_points, frequency grid, band start index, and band end index.
+        Resolved window length, full shifted FFT frequency grid, and start-inclusive/end-exclusive
+        indices selecting the requested frequency band.
+
+    Raises
+    ------
+    ValueError
+        If the requested bounds exceed the Nyquist interval, the resolved window length is zero, or
+        the requested band contains no FFT bins.
     """
     # Validate and resolve the frequency bounds
     f_max_allowed = 1 / (2 * dt)
@@ -346,20 +397,33 @@ def build_runtime_config(
     data_config : :class:`DataConfig`
         Data configurations containing the input data and sampling metadata.
     opened_channels : Mapping[int, Any | :class:`~signalsnap_pytorch._core.data_access.HDF5ChannelState`]
-        Opened runtime representation of `data_config.channels`. Array channels are retained
-        directly; HDF5 channels are represented by HDF5ChannelState instances.
+        Opened runtime representation of ``data_config.channels``. Array channels are retained
+        directly; HDF5 channels are represented by :class:`~signalsnap_pytorch._core.data_access.HDF5ChannelState` instances.
     spectrum_config : :class:`SpectrumConfig`
         User configuration for frequency bounds, precision, device, windowing, and
         related calculation options.
     spectra_channels : tuple[tuple[int, ...], ...]
         Specifies which (multi-channel) spectra will be calculated. Each tuple represents one auto-
         or cross-correlation spectrum. Each tuple entry is a channel index which matches the index
-        in `data_config.channels`.
+        in ``data_config.channels``.
 
     Returns
     -------
     RuntimeConfig
         Resolved runtime configuration.
+
+    Warns
+    -----
+    UserWarning
+        If the configured ``m`` requires more samples than are available and is reduced at runtime.
+
+    Raises
+    ------
+    ValueError
+        If active channels have unequal lengths, frequency resolution fails, the effective ``m`` is
+        below the highest requested order, or interlacing cannot produce a shifted estimate.
+    RuntimeError
+        If the requested accelerator is unavailable or its device index is invalid.
     """
 
     # Validate and read the channels, number of data points, and the time step from the
@@ -449,9 +513,19 @@ def build_runtime_config(
 def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]]:
     """Return the window slice indices.
 
-    Each yielded `(start, end, shifted)` selects `m * N` samples from a one-dimensional data
-    channel, where `m = runtime.m` and `N = runtime.window_points`. With interlacing enabled,
-    additional slices shifted by `N // 2` are yielded when they still fit inside the signal.
+    Each yielded ``(start, end, shifted)`` selects ``m * N`` samples from a one-dimensional data
+    channel, where ``m = runtime.m`` and ``N = runtime.window_points``. With interlacing enabled,
+    additional slices shifted by ``N // 2`` are yielded when they still fit inside the signal.
+
+    Parameters
+    ----------
+    runtime : RuntimeConfig
+        Resolved window size, estimate limit, data length, and interlacing setting.
+
+    Yields
+    ------
+    tuple[int, int, bool]
+        Half-open sample bounds and whether the slice belongs to the shifted placement group.
     """
 
     chunk_size = runtime.window_points * runtime.m
@@ -471,7 +545,11 @@ def iter_window_slices(runtime: RuntimeConfig) -> Iterator[tuple[int, int, bool]
 
 
 def window_slice_count(runtime: RuntimeConfig) -> int:
-    """Return the total number of unshifted and shifted spectral estimates."""
+    """Return the total number of unshifted and shifted spectral-estimate slices.
+
+    The shifted count is limited both by available data and by the resolved unshifted estimate
+    count, which already incorporates ``spectral_estimates_max``.
+    """
 
     total = runtime.spectral_estimates
     if not runtime.interlacing:

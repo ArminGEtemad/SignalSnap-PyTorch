@@ -80,22 +80,26 @@ def _old_cg_window(
 
 @dataclass(frozen=True, slots=True)
 class WindowBuffer:
-    """
-    Stores all information related to the window function, so these dont need to be computed
-    repeatedly.
+    """Store the window function and its reusable normalization factors.
 
     Attributes
     ----------
     window : Tensor
-        Has shape `(N,)` where `N = runtime.window_points`.
+        Real window function with shape ``(N,)``, where ``N = runtime.window_points``.
     norm_all_orders : tuple[Tensor, Tensor, Tensor, Tensor]
-        Stores the norm at all orders.
+        Scalar normalization for orders one through four. Entry ``n - 1`` is
+        ``runtime.dt * sum(window**n)``.
     """
 
     window: Tensor
     norm_all_orders: tuple[Tensor, Tensor, Tensor, Tensor]
 
     def norm(self, order: int) -> Tensor:
+        """Return the scalar normalization for an order from one through four.
+
+        Callers must supply a supported positive order; this internal accessor does not perform
+        explicit range validation.
+        """
         return self.norm_all_orders[order - 1]
 
 
@@ -160,22 +164,22 @@ def _acg_window(
 def compute_fft(chunk: Tensor, window: Tensor, runtime: RuntimeConfig) -> Tensor:
     """Window a signal chunk and compute its Fourier coefficients.
 
-    `coeffs` is computed via the ifft with forward normalization, since the SignalSnap paper uses
-    the opposite sign convention for the Fourier transform compared to pytorch.
+    ``coeffs`` is computed via the inverse FFT with forward normalization because the SignalSnap
+    convention uses the opposite Fourier-transform sign from PyTorch.
 
     Parameters
     ----------
     chunk : Tensor
-        Real-valued signal chunk with shape `(m, N)`.
+        Real-valued signal chunk with shape ``(m, N)``.
     window : Tensor
-        Window tensor with shape `(N,)`.
+        Window tensor with shape ``(N,)``.
     runtime : RuntimeConfig
         Runtime settings defining FFT mode, sample spacing, and dtypes.
 
     Returns
     -------
     Tensor
-        Complex Fourier coefficients scaled by `runtime.dt`. The shape is `(m, N)`.
+        Shifted complex Fourier coefficients scaled by ``runtime.dt``, with shape ``(m, N)``.
     """
 
     coeffs = torch.fft.ifft(window * chunk, dim=1, norm="forward")
@@ -195,8 +199,8 @@ def prepare_window(runtime: RuntimeConfig) -> WindowBuffer:
     Returns
     -------
     WindowBuffer
-        `window` has shape `(N,)` where `N = runtime.window_points`. `norm_all_orders` stores the
-        norm at all orders.
+        ``window`` has shape ``(N,)``, where ``N = runtime.window_points``. ``norm_all_orders``
+        contains the scalar normalization for orders one through four.
     """
 
     if runtime.old_window:
@@ -230,13 +234,20 @@ def reshape_window_chunk(chunk: np.ndarray, runtime: RuntimeConfig) -> np.ndarra
     Parameters
     ----------
     chunk : np.ndarray
-        One-dimensional signal slice with shape `(m * N,)`, where `m = runtime.m` and
-        `N = runtime.window_points`.
+        One-dimensional signal slice with shape ``(m * N,)``, where ``m = runtime.m`` and
+        ``N = runtime.window_points``.
+    runtime : RuntimeConfig
+        Resolved window count and window length.
 
     Returns
     -------
     np.ndarray
-        Reshaped chunk with shape `(m, N)`.
+        Reshaped chunk with shape ``(m, N)``.
+
+    Raises
+    ------
+    ValueError
+        If ``chunk`` does not contain exactly ``m * N`` samples.
     """
 
     expected_size = runtime.window_points * runtime.m
@@ -251,7 +262,19 @@ def to_device(array: np.ndarray, runtime: RuntimeConfig) -> Tensor:
     """Convert a NumPy array to a torch tensor using the runtime dtype and device.
 
     The input shape is preserved. In the main calculation pipeline this is typically called with a
-    reshaped signal chunk of shape `(m, N)`.
+    reshaped signal chunk of shape ``(m, N)``.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        NumPy array to transfer.
+    runtime : RuntimeConfig
+        Resolved real dtype and torch device.
+
+    Returns
+    -------
+    Tensor
+        Tensor on ``runtime.device`` with dtype ``runtime.real_dtype``.
     """
 
     return torch.as_tensor(array, dtype=runtime.real_dtype, device=runtime.device)

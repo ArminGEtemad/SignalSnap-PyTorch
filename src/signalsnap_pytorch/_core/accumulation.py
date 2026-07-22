@@ -34,7 +34,7 @@ class SpectrumAccumulator:
     ----------
     channels : tuple[int, ...]
         The indices identifying which channels are part of this calculation. For example,
-        `(0, 0, 0)` indicates a third-order auto-spectrum on channel 0, while `(0, 1)` indicates
+        ``(0, 0, 0)`` indicates a third-order auto-spectrum on channel 0, while ``(0, 1)`` indicates
         a cross-spectrum between channels 0 and 1.
     freq : np.ndarray
         Frequency axis associated with the spectrum.
@@ -54,11 +54,11 @@ class SpectrumAccumulator:
         interlacing is enabled.
     chunks_unshifted : int
         The total number of individual unshifted spectral estimates integrated into
-        `spectrum_sum_unshifted`.
+        ``spectrum_sum_unshifted``.
     chunks_shifted : int
         The total number of individual shifted spectral estimates integrated into
-        `spectrum_sum_shifted`. When interlacing is enabled, this count never exceeds
-        `chunks_unshifted`.
+        ``spectrum_sum_shifted``. When interlacing is enabled, this count never exceeds
+        ``chunks_unshifted``.
     """
 
     channels: tuple[int, ...]
@@ -75,6 +75,7 @@ class SpectrumAccumulator:
 
     @property
     def order(self) -> int:
+        """Order of the accumulated spectrum, derived from its channel tuple."""
         return len(self.channels)
 
 
@@ -83,7 +84,7 @@ class SpectrumAccumulatorStore:
     """Container for all :class:`SpectrumAccumulator` used by a calculation pipeline.
 
     Stores one :class:`SpectrumAccumulator` per channel tuple. Accumulators are indexed by
-    `channels`, where `channels` is a tuple of data-channel indices.
+    ``channels``, where ``channels`` is a tuple of data-channel indices.
 
     This class owns collection-level bookkeeping only. Numerical accumulation, error estimation, and
     finalization are handled elsewhere.
@@ -91,22 +92,29 @@ class SpectrumAccumulatorStore:
     Attributes
     ----------
     accumulators : dict[tuple[int, ...], SpectrumAccumulator]
-        Mapping from `channels` to the corresponding :class:`SpectrumAccumulator`. For example,
-        `(0, 0)` identifies the second-order auto-spectrum of channel 0, while `(0, 1)`
+        Mapping from ``channels`` to the corresponding :class:`SpectrumAccumulator`. For example,
+        ``(0, 0)`` identifies the second-order auto-spectrum of channel 0, while ``(0, 1)``
         identifies a second-order cross-spectrum between channels 0 and 1.
     """
 
     accumulators: dict[tuple[int, ...], SpectrumAccumulator] = field(default_factory=dict)
 
     def __iter__(self) -> Iterator[SpectrumAccumulator]:
+        """Iterate over accumulators in insertion order."""
         return iter(self.accumulators.values())
 
     def get(self, channels: tuple[int, ...]) -> SpectrumAccumulator:
-        """Return the accumulator for a channel tuple."""
+        """Return the accumulator for a channel tuple.
+
+        Raises
+        ------
+        KeyError
+            If ``channels`` is not present.
+        """
         return self.accumulators[channels]
 
     def add(self, accumulator: SpectrumAccumulator) -> None:
-        """Add or replace a spectrum accumulator using its channels."""
+        """Add an accumulator, replacing one with the same channel tuple."""
         self.accumulators[accumulator.channels] = accumulator
 
 
@@ -141,7 +149,17 @@ def accumulate_spectrum(
 
     Adds the spectral estimate to the running sum and stores running sums of squared
     real and imaginary components used later to estimate the standard error of the mean. Spectral
-    estimates and the squared component are accumulated separately for shifted and unshifted data.
+    estimates and their squared components are accumulated separately for shifted and unshifted
+    data.
+
+    Parameters
+    ----------
+    accumulator : SpectrumAccumulator
+        Mutable accumulation state for one requested spectrum.
+    single_spectrum : Tensor
+        One spectral estimate. Its shape must match prior estimates accumulated into the same group.
+    shifted : bool, default=False
+        Store the estimate in the shifted interlacing group instead of the unshifted group.
     """
 
     if not shifted:
@@ -184,6 +202,15 @@ def _check_accumulator_group(
     squared_sum: Tensor | None,
     chunks: int,
 ) -> tuple[Tensor, Tensor, int] | None:
+    """Validate one shifted or unshifted accumulator group.
+
+    Returns ``None`` for a consistently empty group and the validated state otherwise.
+
+    Raises
+    ------
+    RuntimeError
+        If the sum, squared sum, and count do not describe a consistent group.
+    """
     if spectrum_sum is None:
         if squared_sum is not None or chunks != 0:
             raise RuntimeError("Spectrum accumulator state is inconsistent.")
@@ -200,8 +227,24 @@ def _finalize_accumulator_group(
     squared_sum: Tensor,
     chunks_processed: int,
 ) -> tuple[Tensor, Tensor | None]:
-    """
-    Compute spectrum mean and error for each specified group, e.g. for shifted and unshifted data.
+    """Compute the mean and component-wise standard error for one placement group.
+
+    The real and imaginary components are treated independently. The returned error is ``None``
+    when fewer than two estimates are available.
+
+    Parameters
+    ----------
+    spectrum_sum : Tensor
+        Sum of the complex spectral estimates.
+    squared_sum : Tensor
+        Complex tensor whose real and imaginary components contain the respective sums of squares.
+    chunks_processed : int
+        Number of estimates represented by both sums.
+
+    Returns
+    -------
+    tuple[Tensor, Tensor | None]
+        Group mean and its component-wise standard error.
     """
     mean = spectrum_sum / chunks_processed
 
@@ -229,7 +272,32 @@ def _finalize_accumulator_group(
 
 
 def finalize_result(accumulator: SpectrumAccumulator) -> SpectrumResult:
-    """Create a finalized result from an accumulator."""
+    """Create a CPU-backed result from accumulated spectral estimates.
+
+    Shifted and unshifted estimates are combined into one count-weighted mean. Standard errors are
+    computed within each placement group; when both groups provide an error, their real and
+    imaginary components are combined using the component-wise maximum.
+
+    Parameters
+    ----------
+    accumulator : SpectrumAccumulator
+        Completed accumulation state for one requested spectrum.
+
+    Returns
+    -------
+    SpectrumResult
+        Final mean, frequency metadata, and optional component-wise standard error as NumPy arrays.
+
+    Warns
+    -----
+    RuntimeWarning
+        If no placement group contains at least two estimates and no error can be calculated.
+
+    Raises
+    ------
+    RuntimeError
+        If no unshifted spectra were accumulated or an accumulator group is inconsistent.
+    """
 
     unshifted_group = _check_accumulator_group(
         accumulator.spectrum_sum_unshifted,
